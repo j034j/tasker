@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Brand Colors - Vibrant & Premium */
+    --primary: 250 100% 65%;
+    /* #6F5AF6 - Electric Violet */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 190 100% 50%;
+    /* #00D2FF - Cyan */
+    --secondary-foreground: 220 20% 10%;
+
+    --accent: 320 100% 60%;
+    /* #FF33A0 - Hot Pink */
+    --accent-foreground: 0 0% 100%;
+
+    --background: 240 20% 98%;
+    /* Light Grey Blue Tint */
+    --foreground: 240 10% 3.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 250 100% 70%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 240 10% 10%;
+    /* Deep Blue-Black */
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 13%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 13%;
+    --popover-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 20%;
+    --muted-foreground: 240 5% 64.9%;
+
+    --border: 240 3.7% 20%;
+    --input: 240 3.7% 20%;
+    --ring: 250 100% 65%;
+  }
+
+  /* Global Reset & Typography */
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.2);
+    color: hsl(var(--primary));
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background-color: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .dark .glass {
+    background-color: rgba(24, 24, 27, 0.7);
+    /* zinc-900 */
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .glass-card {
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(228, 228, 231, 0.5);
+    /* zinc-200 */
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    transition: all 300ms;
+  }
+
+  .dark .glass-card {
+    background-color: rgba(24, 24, 27, 0.8);
+    border-color: rgba(63, 63, 70, 0.5);
+    /* zinc-700 */
+  }
+
+  .glass-card:hover {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  }
+
+  .animate-in {
+    animation: fadeIn 0.5s ease-out forwards;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
