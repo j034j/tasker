@@ -67,6 +67,7 @@ export const initDB = async () => {
 
         people_required INTEGER DEFAULT 1,
         skills TEXT,
+        weather_code INTEGER,
 
         weather_index INTEGER DEFAULT 0,
         funding_factor INTEGER DEFAULT 0,
@@ -100,7 +101,8 @@ export const initDB = async () => {
     'ALTER TABLE tasks ADD COLUMN archived BOOLEAN DEFAULT 0',
     'ALTER TABLE boards ADD COLUMN archived BOOLEAN DEFAULT 0',
     'ALTER TABLE tasks ADD COLUMN project_duration TEXT',
-    'ALTER TABLE tasks ADD COLUMN project_location TEXT'
+    'ALTER TABLE tasks ADD COLUMN project_location TEXT',
+    'ALTER TABLE tasks ADD COLUMN weather_code INTEGER'
   ];
 
   for (const sql of migrations) {

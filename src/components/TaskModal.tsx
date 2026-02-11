@@ -22,6 +22,7 @@ interface Task {
     season?: 'Spring' | 'Summer' | 'Autumn' | 'Winter';
     project_duration?: string;
     project_location?: string;
+    weather_code?: number;
 }
 
 interface TaskModalProps {
@@ -48,6 +49,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
     const [projectDuration, setProjectDuration] = useState(task?.project_duration || '');
     const [projectLocation, setProjectLocation] = useState(task?.project_location || '');
     const [localWeatherImpact, setLocalWeatherImpact] = useState<number | null>(null);
+    const [weatherCode, setWeatherCode] = useState<number | undefined>(task?.weather_code);
 
     const [saving, setSaving] = useState(false);
 
@@ -78,7 +80,6 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                 peopleRequired,
                 skills,
                 weatherSensitive,
-                weatherSensitive,
                 weatherImpact: localWeatherImpact !== null ? localWeatherImpact : weatherImpact,
                 projectSeason: season as any,
                 currentSeason
@@ -99,6 +100,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
             const weather = await fetchWeather(coords.latitude, coords.longitude);
             const impact = getWeatherImpact(weather);
             setLocalWeatherImpact(impact);
+            setWeatherCode(weather.conditionCode);
             if (weather.season) setSeason(weather.season); // Auto-set season
         }
     };
@@ -143,6 +145,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                 season,
                 projectDuration,
                 projectLocation,
+                weatherCode,
                 columnId // Only needed for create, ignored by update usually
             };
 

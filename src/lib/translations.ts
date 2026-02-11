@@ -34,6 +34,7 @@ export type TranslationKey =
     | 'weather_sensitive'
     | 'weather_sensitive_label'
     | 'weather_impact_msg'
+    | 'location_label'
     | 'auto_generate'
     | 'cancel'
     | 'save'
@@ -87,6 +88,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         weather_sensitive: 'Weather Sensitive',
         weather_sensitive_label: 'Weather Sensitive Task',
         weather_impact_msg: 'Urgency Boost due to Weather',
+        location_label: 'Location',
         auto_generate: 'Auto-Generate',
         cancel: 'Cancel',
         save: 'Save Changes',
@@ -140,6 +142,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         weather_sensitive: 'Wetterabhängig',
         weather_sensitive_label: 'Wetterabhängige Aufgabe',
         weather_impact_msg: 'Dringlichkeit erhöht durch Wetter',
+        location_label: 'Standort',
         auto_generate: 'Automatisch',
         cancel: 'Abbrechen',
         save: 'Speichern',

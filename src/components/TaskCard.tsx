@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Tag, Archive, RotateCcw, X } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { getWeatherIcon } from '@/lib/weatherService';
 import { useStore } from '@/lib/store';
 
 interface Task {
@@ -17,6 +18,7 @@ interface Task {
     archived?: boolean;
     project_duration?: string;
     project_location?: string;
+    weather_code?: number;
 }
 
 interface TaskCardProps {
@@ -126,10 +128,20 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                         )}
                         {task.project_location && (
                             <div className="flex items-start gap-2">
-                                <span className="opacity-70 mt-1">📍</span>
+                                <span className="opacity-70 mt-1">
+                                    {task.weather_code !== undefined && task.weather_code !== null
+                                        ? getWeatherIcon(task.weather_code)
+                                        : '📍'
+                                    }
+                                </span>
                                 <div className="flex flex-col">
                                     <span className="text-[10px] uppercase font-bold text-muted-foreground/70 leading-tight">Location</span>
-                                    <span className="font-medium leading-tight">{task.project_location}</span>
+                                    <span className="font-medium leading-tight flex items-center gap-1">
+                                        {task.project_location}
+                                        {task.weather_code !== undefined && task.weather_code !== null && (
+                                            <span>{getWeatherIcon(task.weather_code)}</span>
+                                        )}
+                                    </span>
                                 </div>
                             </div>
                         )}

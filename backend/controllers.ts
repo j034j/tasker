@@ -123,7 +123,8 @@ export const createTask = async (req: Request, res: Response) => {
     const {
         columnId, title, description, urgency, dueDate,
         weatherSensitive, fundingNeeded, assignedTo, peopleRequired, skills,
-        weatherIndex, fundingFactor, skillAvailability, projectDuration, projectLocation
+        weatherIndex, fundingFactor, skillAvailability, projectDuration, projectLocation,
+        weatherCode
     } = req.body;
     const id = uuidv4();
     const score = 0;
@@ -135,14 +136,16 @@ export const createTask = async (req: Request, res: Response) => {
                 urgency, due_date, weather_sensitive, funding_needed, 
                 people_required, skills,
                 weather_index, funding_factor, skill_availability,
-                priority_score, project_duration, project_location
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                priority_score, project_duration, project_location,
+                weather_code
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             id, columnId, title, description, assignedTo,
             urgency, dueDate, weatherSensitive ? 1 : 0, fundingNeeded,
             peopleRequired || 1, skills || '',
             weatherIndex || 0, fundingFactor || 0, skillAvailability || 50,
-            score, projectDuration || '', projectLocation || ''
+            score, projectDuration || '', projectLocation || '',
+            weatherCode !== undefined ? weatherCode : null
         ]);
 
         res.json({ id, title, priority_score: score });
@@ -203,7 +206,7 @@ export const updateTask = async (req: Request, res: Response) => {
         title, description, urgency, dueDate,
         weatherSensitive, fundingNeeded, peopleRequired, skills,
         weather_index, funding_factor, skill_availability,
-        archived, projectDuration, projectLocation
+        archived, projectDuration, projectLocation, weatherCode
     } = req.body;
 
     try {
@@ -213,7 +216,8 @@ export const updateTask = async (req: Request, res: Response) => {
                 weather_sensitive = ?, funding_needed = ?,
                 people_required = ?, skills = ?,
                 weather_index = ?, funding_factor = ?, skill_availability = ?,
-                archived = ?, project_duration = ?, project_location = ?
+                archived = ?, project_duration = ?, project_location = ?,
+                weather_code = ?
             WHERE id = ?
         `, [
             title, description, urgency, dueDate,
@@ -221,6 +225,7 @@ export const updateTask = async (req: Request, res: Response) => {
             peopleRequired, skills,
             weather_index, funding_factor, skill_availability,
             archived ? 1 : 0, projectDuration, projectLocation,
+            weatherCode !== undefined ? weatherCode : null,
             id
         ]);
 
