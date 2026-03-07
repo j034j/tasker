@@ -138,17 +138,15 @@ export const generateTags = (text: string): string[] => {
 
         // Also check if the tag itself is mentioned
         const capitalizedWord = word.charAt(0).toUpperCase() + word.slice(1);
-        // @ts-ignore
         if (['Farming', 'Construction', 'Mechanic', 'Plumber', 'Carpenter', 'Electrician', 'Frontend', 'Backend'].includes(capitalizedWord)) {
-            // @ts-ignore
-            scores[capitalizedWord] = (scores[capitalizedWord] || 0) + 3;
+            (scores as Record<string, number>)[capitalizedWord] = (scores[capitalizedWord] || 0) + 3;
         }
     });
 
     // 3. Filter results
     const THRESHOLD = 1.0;
     return Object.entries(scores)
-        .filter(([_, score]) => score >= THRESHOLD)
+        .filter(([, score]) => score >= THRESHOLD)
         .sort((a, b) => b[1] - a[1]) // Sort by score descending
         .map(([tag]) => tag)
         .slice(0, 5); // Start with top 5 max

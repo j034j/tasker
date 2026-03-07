@@ -102,16 +102,9 @@ export const getWeatherIcon = (code: number): string => {
     // WMO Weather interpretation codes (WW)
     // Code 0: Clear sky
     if (code === 0) return '☀️'; // Clear
-    // Code 1, 2, 3: Mainly clear, partly cloudy, and overcast
-    if (code >= 1 && code <= 3) return 'cloud-sun'; // Partly Cloudy (using string for Lucide if needed, or emoji) -> '⛅'
-    // Let's use Emojis for simplicity in text, or specific Lucide icon names if checking in component
-    // User asked "appropriate weather icon". Lucide icons are cleaner.
-    // Let's return Lucide icon names and handle them in the component?
-    // Or just simple Emojis? "show besides the name...". Emojis are easiest and colorful.
 
-    if (code === 0) return '☀️';
+    // Code 1, 2, 3: Mainly clear, partly cloudy, and overcast
     if (code === 1) return '🌤️';
-    if (code === 2) return 'partly cloundy'; // Wait, standard emojis: ⛅
     if (code === 2) return '⛅';
     if (code === 3) return '☁️'; // Overcast
 
@@ -119,8 +112,8 @@ export const getWeatherIcon = (code: number): string => {
     if (code >= 45 && code <= 48) return '🌫️';
 
     // Drizzle
-    if (code >= 51 && code <= 55) return 'bf-cloud-rain'; // 🌧️
-    if (code >= 56 && code <= 57) return 'freezing-rain'; // 🥶🌧️
+    if (code >= 51 && code <= 55) return '🌧️';
+    if (code >= 56 && code <= 57) return '🌧️'; // Freezing Drizzle
 
     // Rain
     if (code >= 61 && code <= 65) return '🌧️';

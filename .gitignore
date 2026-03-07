@@ -1,0 +1,10 @@
+node_modules
+dist
+*.log
+tasker.db
+tasker.db-wal
+tasker.db-shm
+backend/tasker.db
+.env
+.env.local
+.DS_Store

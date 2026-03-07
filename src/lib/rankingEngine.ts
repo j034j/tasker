@@ -34,15 +34,31 @@ export const calculateTimeFactor = (dueDate?: string): number => {
     return Math.max(0, 50 - ((diffDays - 7) * 2));
 };
 
-export const calculateTaskScore = (task: Task, _weights: RankingWeights): number => {
-    // Legacy support
-    return task.urgency;
+export const calculateTaskScore = (task: Task, _weights: RankingWeights): number => { // eslint-disable-line @typescript-eslint/no-unused-vars -- API compatibility
+    const baseUrgency = task.urgency;
+    const overrideUrgency = task.admin_override_urgency;
+    const overridePriority = Math.max(0, Math.min(100, Number(task.admin_override_priority || 0)));
+
+    // Subjective org-level override is intentionally supreme.
+    // Urgency override alone is enough to jump above objective-ranked tasks.
+    if (overrideUrgency !== null && overrideUrgency !== undefined) {
+        return 10000 + (Math.max(0, Math.min(100, Number(overrideUrgency))) * 100);
+    }
+
+    // Backward compatibility for tasks that only used legacy priority boost.
+    if (overridePriority > 0) {
+        return 10000 + (overridePriority * 100) + baseUrgency;
+    }
+
+    return baseUrgency;
 };
 
 /**
  * Calculates a unified Urgency/Priority Score (0-100) based on all factors.
  */
 export interface UrgencyFactors {
+    title?: string;
+    description?: string;
     dueDate?: string;
     fundingNeeded?: number; // Raw $
     peopleRequired?: number; // Count
@@ -73,6 +89,23 @@ export const calculateUrgency = (factors: UrgencyFactors): number => {
     const criticalKeywords = ['repair', 'farming', 'farm', 'harvest', 'fix', 'emergency', 'leak', 'broken', 'maintenance'];
     const hasCriticalKeyword = skillList.some(s => criticalKeywords.some(k => s.includes(k)));
     const criticalScore = hasCriticalKeyword ? 100 : 0;
+    const recurringDutyKeywords = [
+        'daily',
+        'weekly',
+        'routine',
+        'recurring',
+        'milk',
+        'feeding',
+        'feed',
+        'open shop',
+        'store opening',
+        'nursery shop',
+        'livestock',
+        'barn',
+        'cleaning round'
+    ];
+    const textBlob = `${factors.title || ''} ${factors.description || ''} ${factors.skills || ''}`.toLowerCase();
+    const recurringDutyScore = recurringDutyKeywords.some((token) => textBlob.includes(token)) ? 100 : 0;
 
     // 5. Weather Factor (25%)
     let weatherScore = factors.weatherSensitive ? (factors.weatherImpact || 0) : 0;
@@ -95,6 +128,7 @@ export const calculateUrgency = (factors: UrgencyFactors): number => {
         (timeScore * 0.35) +
         (weatherScore * 0.25) +
         (criticalScore * 0.20) +
+        (recurringDutyScore * 0.05) +
         (financialScore * 0.10) +
         (peopleScore * 0.10) +
         (skillsScore * 0.05)
@@ -121,6 +155,9 @@ export const calculateUrgency = (factors: UrgencyFactors): number => {
     // 3. Critical Keyword alone
     else if (hasCriticalKeyword) {
         finalScore = Math.max(80, finalScore);
+    }
+    if (recurringDutyScore > 0) {
+        finalScore = Math.max(85, finalScore + 8);
     }
 
     return Math.min(100, Math.round(finalScore));

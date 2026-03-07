@@ -53,12 +53,100 @@ export type TranslationKey =
     | 'delete_confirm'
     | 'archive_action'
     | 'restore_action'
-    | 'show_archived';
+    | 'show_archived'
+    | 'interest_you_only'
+    | 'interest_you'
+    | 'interest_others'
+    | 'interest_people'
+    | 'algo_config'
+    | 'algo_desc'
+    | 'w_due_date'
+    | 'w_weather'
+    | 'header_welcome'
+    | 'header_tasks'
+    | 'header_tasks_from'
+    | 'w_funding'
+    | 'w_skills'
+    | 'create_board_title'
+    | 'board_name_label'
+    | 'board_name_placeholder'
+    | 'visibility_label'
+    | 'vis_private'
+    | 'vis_private_desc'
+    | 'vis_public'
+    | 'vis_public_desc'
+    | 'create_board_btn'
+    | 'creating_board_btn'
+    | 'discovery_title'
+    | 'browse_boards'
+    | 'switch_org'
+    | 'discovery_desc'
+    | 'public_badge'
+    | 'created_by'
+    | 'join'
+    | 'leave'
+    | 'no_public_boards'
+    | 'search_org_placeholder'
+    | 'searching'
+    | 'search_btn'
+    | 'current_badge'
+    | 'boards_count'
+    | 'creator_label'
+    | 'switch_btn'
+    | 'no_orgs_found'
+    | 'auth_signin'
+    | 'auth_create'
+    | 'auth_join'
+    | 'auth_new_org_name'
+    | 'auth_your_name'
+    | 'auth_email'
+    | 'auth_password'
+    | 'auth_find_org'
+    | 'auth_find_btn'
+    | 'auth_select_org'
+    | 'auth_creator'
+    | 'auth_boards'
+    | 'auth_selected'
+    | 'auth_select_boards'
+    | 'auth_no_boards'
+    | 'auth_processing'
+    | 'auth_create_join'
+    | 'auth_join_workspace_btn'
+    | 'auth_no_account'
+    | 'auth_create_workspace'
+    | 'auth_join_workspace'
+    | 'auth_have_account'
+    | 'auth_login'
+    | 'auth_org_not_found'
+    | 'auth_auth_failed'
+    | 'auth_select_org_err'
+    | 'dash_boards_label'
+    | 'dash_browse_title'
+    | 'dash_unfollow'
+    | 'dash_follow'
+    | 'dash_archive'
+    | 'dash_delete'
+    | 'dash_new_btn'
+    | 'dash_create_first'
+    | 'dash_browse_btn'
+    | 'dash_empty_msg'
+    | 'dash_create_btn'
+    | 'dash_browse_all'
+    | 'translate_btn'
+    | 'translating'
+    | 'auth_phone_optional'
+    | 'profile_title'
+    | 'profile_new_password'
+    | 'profile_password_hint'
+    | 'profile_save_btn';
 
 export const translations: Record<Language, Record<TranslationKey, string>> = {
     en: {
         app_title: 'Tasker',
         subtitle: 'The intelligent ranking engine',
+        header_welcome: 'Welcome',
+        header_tasks: ', here are your tasks',
+        header_tasks_from: 'Here are your tasks from',
         new_board: 'New Board',
         search_placeholder: 'Search tasks...',
         welcome_title: 'Welcome to Tasker',
@@ -108,11 +196,103 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         delete_confirm: 'Are you sure you want to delete this task?',
         archive_action: 'Archive',
         restore_action: 'Restore',
-        show_archived: 'Show Archived'
+        show_archived: 'Show Archived',
+        interest_you_only: 'You are interested',
+        interest_you: 'You',
+        interest_others: 'others',
+        interest_people: 'people interested',
+        algo_config: 'Algorithm Configuration',
+        algo_desc: 'Adjust the weights to customize how task urgency is calculated.',
+        w_due_date: 'Due Date Weight',
+        w_weather: 'Weather Weight',
+        w_funding: 'Funding Weight',
+        w_skills: 'Skills Weight',
+
+        // Create Board Modal
+        create_board_title: 'Create New Board',
+        board_name_label: 'Board Name',
+        board_name_placeholder: 'e.g. Q1 Roadmap',
+        visibility_label: 'Visibility',
+        vis_private: 'Private',
+        vis_private_desc: 'Only members can join.',
+        vis_public: 'Public',
+        vis_public_desc: 'Anyone in org can see.',
+        create_board_btn: 'Create Board',
+        creating_board_btn: 'Creating...',
+
+        // Discovery Modal
+        discovery_title: 'Discovery',
+        browse_boards: 'Browse Boards',
+        switch_org: 'Switch Organization',
+        discovery_desc: 'Join public boards in your current organization to see them in your dashboard.',
+        public_badge: 'Public',
+        created_by: 'Created by',
+        join: 'Join',
+        leave: 'Leave',
+        no_public_boards: 'No public boards found in this organization.',
+        search_org_placeholder: 'Search for an organization...',
+        searching: 'Searching...',
+        search_btn: 'Search',
+        current_badge: 'Current',
+        boards_count: 'Boards',
+        creator_label: 'Creator',
+        switch_btn: 'Switch',
+        no_orgs_found: 'No organizations found matching',
+        // Auth Screen
+        auth_signin: 'Sign In',
+        auth_create: 'Create',
+        auth_join: 'Join',
+        auth_new_org_name: 'New Organization Name',
+        auth_your_name: 'Your Name',
+        auth_email: 'Email',
+        auth_password: 'Password',
+        auth_find_org: 'Find Organization',
+        auth_find_btn: 'Find',
+        auth_select_org: 'Select Organization:',
+        auth_creator: 'Creator:',
+        auth_boards: 'Boards',
+        auth_selected: 'Selected:',
+        auth_select_boards: 'Select Boards to Join:',
+        auth_no_boards: 'No boards found.',
+        auth_processing: 'Processing...',
+        auth_create_join: 'Create & Join',
+        auth_join_workspace_btn: 'Join Workspace',
+        auth_no_account: "Don't have an account?",
+        auth_create_workspace: 'Create Workspace',
+        auth_join_workspace: 'Join Workspace',
+        auth_have_account: 'Already have an account?',
+        auth_login: 'Log In',
+        auth_org_not_found: 'Organization not found. Check spelling.',
+        auth_auth_failed: 'Authentication failed',
+        auth_select_org_err: 'Please select an organization.',
+
+        // Dashboard / App
+        dash_boards_label: 'Board',
+        dash_browse_title: 'Browse Boards in Org',
+        dash_unfollow: 'Unfollow Board',
+        dash_follow: 'Follow Board',
+        dash_archive: 'Archive Board',
+        dash_delete: 'Delete Board',
+        dash_new_btn: 'New',
+        dash_create_first: 'Create First Board',
+        dash_browse_btn: 'Browse Boards',
+        dash_empty_msg: 'Select or create a board to get started.',
+        dash_create_btn: 'Create Board',
+        dash_browse_all: 'Browse All Boards',
+        translate_btn: 'Translate Content',
+        translating: 'Translating...',
+        auth_phone_optional: 'Phone Number (Optional)',
+        profile_title: 'My Profile',
+        profile_new_password: 'New Password (Optional)',
+        profile_password_hint: 'Leave blank to keep current password',
+        profile_save_btn: 'Save Changes'
     },
     de: {
-        app_title: 'Tasker',
+        app_title: 'Tasker - Aufgabenplaner',
         subtitle: 'Die intelligente Priorisierungs-Engine',
+        header_welcome: 'Willkommen',
+        header_tasks: ', hier sind Ihre Aufgaben',
+        header_tasks_from: 'Hier sind Ihre Aufgaben von',
         new_board: 'Neues Board',
         search_placeholder: 'Aufgaben suchen...',
         welcome_title: 'Willkommen bei Tasker',
@@ -162,6 +342,97 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         delete_confirm: 'Sind Sie sicher, dass Sie diese Aufgabe löschen möchten?',
         archive_action: 'Archivieren',
         restore_action: 'Wiederherstellen',
-        show_archived: 'Archiviertes anzeigen'
+        show_archived: 'Archiviertes anzeigen',
+
+        interest_you_only: 'Du bist interessiert',
+        interest_you: 'Du',
+        interest_others: 'andere',
+        interest_people: 'Leute interessiert',
+        algo_config: 'Algorithmus-Konfiguration',
+        algo_desc: 'Passen Sie die Gewichtungen an, um die Dringlichkeitsberechnung anzupassen.',
+        w_due_date: 'Gewichtung Fälligkeit',
+        w_weather: 'Gewichtung Wetter',
+        w_funding: 'Gewichtung Budget',
+        w_skills: 'Gewichtung Fähigkeiten',
+
+        // Create Board Modal
+        create_board_title: 'Neues Board Erstellen',
+        board_name_label: 'Board Name',
+        board_name_placeholder: 'z.B. Q1 Roadmap',
+        visibility_label: 'Sichtbarkeit',
+        vis_private: 'Privat',
+        vis_private_desc: 'Nur Mitglieder können beitreten.',
+        vis_public: 'Öffentlich',
+        vis_public_desc: 'Jeder in der Organisation kann es sehen.',
+        create_board_btn: 'Board Erstellen',
+        creating_board_btn: 'Erstellt...',
+
+        // Discovery Modal
+        discovery_title: 'Entdecken',
+        browse_boards: 'Boards Durchsuchen',
+        switch_org: 'Organisation Wechseln',
+        discovery_desc: 'Treten Sie öffentlichen Boards in Ihrer Organisation bei.',
+        public_badge: 'Öffentlich',
+        created_by: 'Erstellt von',
+        join: 'Beitreten',
+        leave: 'Verlassen',
+        no_public_boards: 'Keine öffentlichen Boards in dieser Organisation gefunden.',
+        search_org_placeholder: 'Nach Organisation suchen...',
+        searching: 'Suchen...',
+        search_btn: 'Suchen',
+        current_badge: 'Aktuell',
+        boards_count: 'Boards',
+        creator_label: 'Ersteller',
+        switch_btn: 'Wechseln',
+        no_orgs_found: 'Keine Organisationen gefunden für',
+
+        // Auth Screen
+        auth_signin: 'Anmelden',
+        auth_create: 'Erstellen',
+        auth_join: 'Beitreten',
+        auth_new_org_name: 'Neuer Organisationsname',
+        auth_your_name: 'Ihr Name',
+        auth_email: 'E-Mail',
+        auth_password: 'Passwort',
+        auth_find_org: 'Organisation Finden',
+        auth_find_btn: 'Finden',
+        auth_select_org: 'Organisation Wählen:',
+        auth_creator: 'Ersteller:',
+        auth_boards: 'Boards',
+        auth_selected: 'Ausgewählt:',
+        auth_select_boards: 'Boards zum Beitreten wählen:',
+        auth_no_boards: 'Keine Boards gefunden.',
+        auth_processing: 'Verarbeite...',
+        auth_create_join: 'Erstellen & Beitreten',
+        auth_join_workspace_btn: 'Workspace Beitreten',
+        auth_no_account: "Noch kein Konto?",
+        auth_create_workspace: 'Workspace Erstellen',
+        auth_join_workspace: 'Workspace Beitreten',
+        auth_have_account: 'Bereits registriert?',
+        auth_login: 'Einloggen',
+        auth_org_not_found: 'Organisation nicht gefunden.',
+        auth_auth_failed: 'Authentifizierung fehlgeschlagen',
+        auth_select_org_err: 'Bitte wählen Sie eine Organisation.',
+
+        // Dashboard / App
+        dash_boards_label: 'Board',
+        dash_browse_title: 'Boards durchsuchen',
+        dash_unfollow: 'Board entfolgen',
+        dash_follow: 'Board folgen',
+        dash_archive: 'Board archivieren',
+        dash_delete: 'Board löschen',
+        dash_new_btn: 'Neu',
+        dash_create_first: 'Erstes Board erstellen',
+        dash_browse_btn: 'Boards durchsuchen',
+        dash_empty_msg: 'Wählen oder erstellen Sie ein Board, um zu beginnen.',
+        dash_create_btn: 'Board erstellen',
+        dash_browse_all: 'Alle Boards durchsuchen',
+        translate_btn: 'Inhalt übersetzen',
+        translating: 'Übersetzen...',
+        auth_phone_optional: 'Telefonnummer (Optional)',
+        profile_title: 'Mein Profil',
+        profile_new_password: 'Neues Passwort (Optional)',
+        profile_password_hint: 'Leer lassen, um aktuelles Passwort zu behalten',
+        profile_save_btn: 'Änderungen speichern'
     }
 };

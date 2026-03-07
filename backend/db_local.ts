@@ -1,6 +1,6 @@
-
+﻿
 import Database from 'better-sqlite3';
-import { DatabaseAdapter, QueryResult } from './db_adapter';
+import type { DatabaseAdapter, QueryResult } from './db_adapter.js';
 
 export class LocalAdapter implements DatabaseAdapter {
     private db: Database.Database;
@@ -10,11 +10,11 @@ export class LocalAdapter implements DatabaseAdapter {
         this.db.pragma('journal_mode = WAL');
     }
 
-    async query(sql: string, params: any[] = []): Promise<QueryResult> {
+    async query(sql: string, params: unknown[] = []): Promise<QueryResult> {
         try {
             // Check if it's a SELECT query
             if (sql.trim().toUpperCase().startsWith('SELECT')) {
-                const rows = this.db.prepare(sql).all(params);
+                const rows = this.db.prepare(sql).all(params) as Record<string, unknown>[];
                 return { rows };
             } else {
                 // For INSERT/UPDATE/DELETE, allow it in query() or use execute()
@@ -31,7 +31,7 @@ export class LocalAdapter implements DatabaseAdapter {
         }
     }
 
-    async execute(sql: string, params: any[] = []): Promise<QueryResult> {
+    async execute(sql: string, params: unknown[] = []): Promise<QueryResult> {
         // Use .exec() for scripts (no params, multi-statement support)
         if (!params || params.length === 0) {
             this.db.exec(sql);
@@ -74,7 +74,11 @@ export class LocalAdapter implements DatabaseAdapter {
             this.db.prepare('COMMIT').run();
             return result;
         } catch (err) {
-            this.db.prepare('ROLLBACK').run();
+            try {
+                this.db.prepare('ROLLBACK').run();
+            } catch (rollbackErr) {
+                console.error('Rollback failed (possibly no transaction active):', rollbackErr);
+            }
             throw err;
         }
     }
