@@ -376,7 +376,12 @@ export const requestEmailVerificationCode = async (req: Request, res: Response) 
             `
         });
 
-        return res.json({ success: true, expiresInHours: EMAIL_VERIFICATION_EXPIRES_HOURS });
+        const response: any = { success: true, expiresInHours: EMAIL_VERIFICATION_EXPIRES_HOURS };
+        if (process.env.EMAIL_PROVIDER === 'console') {
+            response.verificationCode = code; // Only for console mode (dev/testing)
+        }
+
+        return res.json(response);
     } catch (error) {
         console.error('Email verification request failed:', error);
         return res.status(500).json({ error: 'Failed to send verification code email' });

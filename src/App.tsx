@@ -190,8 +190,22 @@ function DashboardShell() {
 
           {/* Language Toggles */}
           <div className="flex items-center gap-1 border-r border-zinc-200 dark:border-zinc-700 pr-4">
-            <button onClick={() => setLanguage('en')} className={`text-xl hover:scale-110 transition-transform ${language === 'en' ? 'opacity-100' : 'opacity-40 grayscale'}`} title="English">🇬🇧</button>
-            <button onClick={() => setLanguage('de')} className={`text-xl hover:scale-110 transition-transform ${language === 'de' ? 'opacity-100' : 'opacity-40 grayscale'}`} title="Deutsch">🇩🇪</button>
+            <button onClick={() => setLanguage('en')} className={`hover:scale-110 transition-transform ${language === 'en' ? 'opacity-100' : 'opacity-40 grayscale'}`} title="English">
+              <svg width="24" height="18" viewBox="0 0 24 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-4.5">
+                <path d="M0 0H24V18H0V0Z" fill="#012169"/>
+                <path d="M0 0L24 18M24 0L0 18" stroke="white" strokeWidth="2"/>
+                <path d="M0 0L24 18M24 0L0 18" stroke="#C8102E" strokeWidth="1"/>
+                <path d="M12 0V18M0 9H24" stroke="white" strokeWidth="3"/>
+                <path d="M12 0V18M0 9H24" stroke="#C8102E" strokeWidth="2"/>
+              </svg>
+            </button>
+            <button onClick={() => setLanguage('de')} className={`hover:scale-110 transition-transform ${language === 'de' ? 'opacity-100' : 'opacity-40 grayscale'}`} title="Deutsch">
+              <svg width="24" height="18" viewBox="0 0 24 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-4.5">
+                <path d="M0 0H24V6H0V0Z" fill="#000"/>
+                <path d="M0 6H24V12H0V6Z" fill="#DD0000"/>
+                <path d="M0 12H24V18H0V12Z" fill="#FFCC00"/>
+              </svg>
+            </button>
           </div>
 
           {/* Org Badge */}

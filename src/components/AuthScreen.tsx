@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from './ui/Button';
+import { VerificationCodeModal } from './VerificationCodeModal';
 import { api } from '@/lib/axios';
 import { useStore } from '@/lib/store';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -69,6 +70,10 @@ export function AuthScreen() {
     const [verificationToken, setVerificationToken] = useState<string | null>(null);
     const [verificationCodeSent, setVerificationCodeSent] = useState(false);
     const [verificationBusy, setVerificationBusy] = useState(false);
+
+    // Modal State
+    const [showVerificationModal, setShowVerificationModal] = useState(false);
+    const [modalCode, setModalCode] = useState('');
 
     // Join Flow State
     const [foundOrgs, setFoundOrgs] = useState<{ id: string; name: string; creatorName: string; boards: { id: string; name: string }[] }[] | null>(null);
@@ -177,10 +182,15 @@ export function AuthScreen() {
         setVerificationBusy(true);
         setError(null);
         try {
-            await api.post('/auth/email-verification/request', { email, purpose: 'register' });
+            const { data } = await api.post('/auth/email-verification/request', { email, purpose: 'register' });
             setVerificationCodeSent(true);
             setVerificationToken(null);
-            setError({ message: 'Verification code sent. Check your inbox.', hint: 'Enter the 6-digit code below to continue registration.' });
+            if (data.verificationCode) {
+                setModalCode(data.verificationCode);
+                setShowVerificationModal(true);
+            } else {
+                setError({ message: 'Verification code sent. Check your inbox.', hint: 'Enter the 6-digit code below to continue registration.' });
+            }
         } catch (err: unknown) {
             setError(normalizeAuthError(mode, err, 'Failed to send verification code'));
         } finally {
@@ -279,14 +289,24 @@ export function AuthScreen() {
                     className={`p-2 rounded-lg transition-all border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 hover:bg-white/80 dark:hover:bg-zinc-800/80 backdrop-blur-sm ${language === 'en' ? 'opacity-100 bg-white/50 dark:bg-zinc-800/50 shadow-sm' : 'opacity-50 hover:opacity-100'}`}
                     title="English"
                 >
-                    <span className="text-2xl" role="img" aria-label="UK Flag">🇬🇧</span>
+                    <svg width="24" height="18" viewBox="0 0 24 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-4.5">
+                        <path d="M0 0H24V18H0V0Z" fill="#012169"/>
+                        <path d="M0 0L24 18M24 0L0 18" stroke="white" strokeWidth="2"/>
+                        <path d="M0 0L24 18M24 0L0 18" stroke="#C8102E" strokeWidth="1"/>
+                        <path d="M12 0V18M0 9H24" stroke="white" strokeWidth="3"/>
+                        <path d="M12 0V18M0 9H24" stroke="#C8102E" strokeWidth="2"/>
+                    </svg>
                 </button>
                 <button
                     onClick={() => setLanguage('de')}
                     className={`p-2 rounded-lg transition-all border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 hover:bg-white/80 dark:hover:bg-zinc-800/80 backdrop-blur-sm ${language === 'de' ? 'opacity-100 bg-white/50 dark:bg-zinc-800/50 shadow-sm' : 'opacity-50 hover:opacity-100'}`}
                     title="Deutsch"
                 >
-                    <span className="text-2xl" role="img" aria-label="German Flag">🇩🇪</span>
+                    <svg width="24" height="18" viewBox="0 0 24 18" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-6 h-4.5">
+                        <path d="M0 0H24V6H0V0Z" fill="#000"/>
+                        <path d="M0 6H24V12H0V6Z" fill="#DD0000"/>
+                        <path d="M0 12H24V18H0V12Z" fill="#FFCC00"/>
+                    </svg>
                 </button>
             </div>
 
@@ -616,6 +636,12 @@ export function AuthScreen() {
                     </div>
                 </div>
             </div>
+            {showVerificationModal && (
+                <VerificationCodeModal
+                    code={modalCode}
+                    onClose={() => setShowVerificationModal(false)}
+                />
+            )}
         </>
     );
 }

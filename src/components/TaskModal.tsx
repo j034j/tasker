@@ -208,9 +208,8 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
     };
 
     return (
-        <DraggableModalWrapper isOpen={true} onClose={onClose} className="w-full max-w-md sm:max-w-md min-h-[50vh] max-h-[85vh]">
-            <div className="flex flex-col h-full">
-                <div className="relative">
+        <DraggableModalWrapper isOpen={true} onClose={onClose} className="w-full max-w-[590px] sm:max-w-[590px] min-h-[60vh] max-h-[90vh] flex flex-col">
+            <div className="relative shrink-0">
                 {/* Header with gradient bar */}
                 <div className={`h-1.5 rounded-t-2xl bg-gradient-to-r ${getUrgencyColor(urgency)}`} />
 
@@ -234,7 +233,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
             </div>
 
             {/* Form content */}
-            <div className="px-6 py-5 space-y-5 flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+            <div className="px-6 py-5 space-y-5 flex-1 overflow-y-auto bg-white dark:bg-zinc-900 min-h-0">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
                         <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-2 uppercase tracking-wide">
@@ -244,7 +243,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                             type="text"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
-                            className="w-full px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+                            className="w-[calc(100%-2px)] px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
                             placeholder={t('title_label')}
                             autoFocus={!task}
                             onBlur={() => !skills && handleAutoTag()}
@@ -260,7 +259,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                             onChange={(e) => setDescription(e.target.value)}
                             onBlur={() => !skills && handleAutoTag()}
                             rows={3}
-                            className="w-full px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none shadow-sm"
+                            className="w-[calc(100%-2px)] px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none shadow-sm"
                             placeholder={t('desc_label')}
                         />
                         <div className="flex justify-end mt-2">
@@ -305,7 +304,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                             value={projectLocation}
                             onChange={(e) => setProjectLocation(e.target.value)}
                             onBlur={handleLocationBlur}
-                            className="w-full px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+                            className="w-[calc(100%-2px)] px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
                             placeholder="e.g. Durnau, Berlin"
                         />
                     </div>
@@ -349,7 +348,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                                     max="100"
                                     value={adminOverrideUrgency ?? urgency}
                                     onChange={(e) => setAdminOverrideUrgency(Number(e.target.value))}
-                                    className="w-full"
+                                    className="w-[calc(100%-2px)] pr-2"
                                 />
                                 <button
                                     type="button"
@@ -453,14 +452,14 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                             type="number"
                             value={fundingNeeded}
                             onChange={(e) => setFundingNeeded(parseInt(e.target.value) || 0)}
-                            className="w-full px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+                            className="w-[calc(100%-2px)] px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
                             placeholder="0"
                         />
                     </div>
 
                     {/* Row: Weather & Season */}
                     <div className="col-span-2 grid grid-cols-2 gap-4">
-                        <div className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700 h-[82px]">
+                        <div className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-200 dark:border-zinc-700 min-h-[82px]">
                             <input
                                 type="checkbox"
                                 id="weatherSensitive"
@@ -527,7 +526,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
             </div>
 
             {/* Footer with actions */}
-            <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 rounded-b-2xl">
+            <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 rounded-b-2xl shrink-0">
                 <div className="flex gap-3">
                     <button
                         onClick={onClose}
@@ -543,7 +542,6 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                         {saving ? `💾 ${t('saving')}` : (task ? `✅ ${t('save')}` : `✨ ${t('creating')}`)}
                     </button>
                 </div>
-            </div>
             </div>
         </DraggableModalWrapper>
     );
