@@ -48,36 +48,21 @@ export class LocalAdapter implements DatabaseAdapter {
     }
 
     async transaction<T>(action: (db: DatabaseAdapter) => Promise<T>): Promise<T> {
-        // better-sqlite3 transactions are synchronous blocking.
-        // We can wrap the sync transaction... but the INNER logic (the action) is likely async (based on our Interface).
-        // This is tricky. better-sqlite3 transaction() expects a synchronous function.
-        // If 'action' returns a Promise, better-sqlite3 will return a Promise (the result).
-        // BUT better-sqlite3 transactions commit when the function returns.
-        // If the function returns a Promise, it commits the *Promise object*, not the result!
-        // So the async operations might happen AFTER the commit?
-        // NO, better-sqlite3 transaction function MUST be synchronous.
-
-        // WORKAROUND:
-        // Since better-sqlite3 is local file access, we technically don't need async for *it* specifically.
-        // But our Interface demands async for Turso compatibility.
-        // 
-        // For LocalAdapter, we might have to accept that we CANNOT do true async transactions easily inside strict Better-SQLite3 .transaction() wrapper if we want to await things inside.
-        // However, since local db operations are actually sync, maybe we don't need to await them *inside* the transaction logic if we use the underlying sync db?
-        // No, the Interface `query` returns Promise.
-
-        // Strategy: A simple "serialize" lock implementation isn't enough for ACID.
-        // We might just use `BEGIN`, `COMMIT`, `ROLLBACK` manually for the Local Adapter if we need async flow support.
-
-        this.db.prepare('BEGIN').run();
+        // Use a SAVEPOINT-based approach so nested transactions are supported
+        // and the async `action` can await adapter methods safely. We create a
+        // savepoint, await the action, then release or rollback to the savepoint.
+        const savepointName = `sp_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
         try {
+            this.db.prepare(`SAVEPOINT ${savepointName}`).run();
             const result = await action(this);
-            this.db.prepare('COMMIT').run();
+            this.db.prepare(`RELEASE SAVEPOINT ${savepointName}`).run();
             return result;
         } catch (err) {
             try {
-                this.db.prepare('ROLLBACK').run();
+                this.db.prepare(`ROLLBACK TO SAVEPOINT ${savepointName}`).run();
+                this.db.prepare(`RELEASE SAVEPOINT ${savepointName}`).run();
             } catch (rollbackErr) {
-                console.error('Rollback failed (possibly no transaction active):', rollbackErr);
+                console.error('Rollback to savepoint failed:', rollbackErr);
             }
             throw err;
         }

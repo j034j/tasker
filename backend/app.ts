@@ -13,6 +13,15 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:51
 const rateWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 300);
 const rateBucket = new Map<string, { count: number; resetAt: number }>();
+const RATE_CLEANUP_INTERVAL_MS = 60 * 1000;
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of rateBucket.entries()) {
+        if (value.resetAt <= now) {
+            rateBucket.delete(key);
+        }
+    }
+}, RATE_CLEANUP_INTERVAL_MS);
 const isProduction = process.env.NODE_ENV === 'production';
 const isLocalDevOrigin = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
 

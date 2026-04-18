@@ -60,15 +60,10 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency }: KanbanBoardProp
     );
 
     useEffect(() => {
-        if (board) {
-            console.log('[Board][TaskModalState]', {
-                isOpen: modalState.isOpen,
-                mode: modalState.mode,
-                columnId: modalState.columnId ?? null,
-                taskId: modalState.task?.id ?? null
-            });
+        if (board && modalState.isOpen) {
+            console.log('TaskModal opened:', { mode: modalState.mode, columnId: modalState.columnId ?? null, taskId: modalState.task?.id ?? null });
         }
-    }, [modalState, board]);
+    }, [board, modalState.isOpen, modalState.mode, modalState.columnId, modalState.task?.id]);
 
     if (!board) return <div className="p-8 text-center">Loading Board...</div>;
 

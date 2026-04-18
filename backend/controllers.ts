@@ -5,28 +5,26 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import type { DatabaseAdapter } from './db_adapter.js';
-import { sendEmail, generateSixDigitCode, hashVerificationCode } from './email.js';
+import { sendEmail, generateSixDigitCode, hashVerificationCode, isConsoleEmailMode } from './email.js';
+import { 
+    registerSchema, loginSchema, createBoardSchema, createTaskSchema, 
+    updateTaskSchema, updateUserSchema, createOrgSchema, 
+    passwordResetRequestSchema, passwordResetSchema,
+    emailVerificationRequestSchema, emailVerificationVerifySchema,
+    moveTaskSchema, translateTextSchema, orgRegistrationSchema
+} from './validators.js';
 
-const isProduction = process.env.NODE_ENV === 'production';
-const DEV_FALLBACK_JWT_SECRET = 'dev_jwt_secret_change_me';
-const DEV_FALLBACK_SUPER_ADMIN_SECRET = 'dev_super_admin_secret_change_me';
-const JWT_SECRET = process.env.JWT_SECRET || (!isProduction ? DEV_FALLBACK_JWT_SECRET : undefined);
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN_SECONDS = Number(process.env.JWT_EXPIRES_IN_SECONDS || 60 * 60 * 12);
-const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET || (!isProduction ? DEV_FALLBACK_SUPER_ADMIN_SECRET : undefined);
+const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET;
 const EMAIL_VERIFICATION_EXPIRES_HOURS = Number(process.env.EMAIL_VERIFICATION_EXPIRES_HOURS || 24);
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 
 if (!JWT_SECRET) {
-    throw new Error('Missing required env var: JWT_SECRET');
+    throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
 }
 if (!SUPER_ADMIN_SECRET) {
-    throw new Error('Missing required env var: SUPER_ADMIN_SECRET');
-}
-if (!process.env.JWT_SECRET && !isProduction) {
-    console.warn('JWT_SECRET not set. Using temporary development fallback secret.');
-}
-if (!process.env.SUPER_ADMIN_SECRET && !isProduction) {
-    console.warn('SUPER_ADMIN_SECRET not set. Using temporary development fallback secret.');
+    throw new Error('Missing required env var: SUPER_ADMIN_SECRET. Set in .env file.');
 }
 
 
@@ -38,9 +36,24 @@ interface AuthenticatedRequest extends Request {
     };
 }
 
+interface EmailVerificationResponse {
+    success: true;
+    expiresInHours: number;
+    verificationCode?: string;
+    verificationToken?: string;
+}
+
+type DevConsoleVerificationEntry = {
+    code: string;
+    purpose: string;
+    expiresAt: string;
+};
+
 // Helper to get first row safely
 const first = <T>(rows: T[]) => rows && rows.length > 0 ? rows[0] : undefined;
 const asRows = <T extends Record<string, unknown>>(rows: Record<string, unknown>[]) => rows as T[];
+const devConsoleVerificationCodes = new Map<string, DevConsoleVerificationEntry>();
+const getVerificationCacheKey = (email: string, purpose: string) => `${purpose}:${email}`;
 const parseCsvIds = (value?: string | null): string[] => (
     value
         ? value.split(',').map((item) => item.trim()).filter(Boolean)
@@ -376,9 +389,22 @@ export const requestEmailVerificationCode = async (req: Request, res: Response) 
             `
         });
 
-        const response: any = { success: true, expiresInHours: EMAIL_VERIFICATION_EXPIRES_HOURS };
-        if (process.env.EMAIL_PROVIDER === 'console') {
+        const response: EmailVerificationResponse = { success: true, expiresInHours: EMAIL_VERIFICATION_EXPIRES_HOURS };
+        if (isConsoleEmailMode) {
+            devConsoleVerificationCodes.set(getVerificationCacheKey(normalizedEmail, normalizedPurpose), {
+                code,
+                purpose: normalizedPurpose,
+                expiresAt
+            });
+            console.log('===========================================================');
+            console.log(`[VERIFICATION CODE] Email: ${normalizedEmail}`);
+            console.log(`[VERIFICATION CODE] Purpose: ${normalizedPurpose}`);
+            console.log(`[VERIFICATION CODE] Code: ${code}`);
+            console.log(`[VERIFICATION CODE] Expires At: ${expiresAt}`);
+            console.log(`TASKER_EMAIL_CODE purpose=${normalizedPurpose} email=${normalizedEmail} code=${code}`);
+            console.log('===========================================================');
             response.verificationCode = code; // Only for console mode (dev/testing)
+            response.verificationToken = issueRegistrationVerificationToken(normalizedEmail);
         }
 
         return res.json(response);
@@ -415,11 +441,31 @@ export const verifyEmailVerificationCode = async (req: Request, res: Response) =
         }
 
         const expectedHash = hashVerificationCode(normalizedEmail, normalizedCode);
-        if (expectedHash !== row.code_hash) {
+        let isValidCode = expectedHash === row.code_hash;
+
+        if (!isValidCode && isConsoleEmailMode) {
+            const cached = devConsoleVerificationCodes.get(getVerificationCacheKey(normalizedEmail, normalizedPurpose));
+            const cachedExpiresAt = cached ? new Date(cached.expiresAt) : null;
+            const cachedStillValid = Boolean(cached && cached.code === normalizedCode && cachedExpiresAt && !Number.isNaN(cachedExpiresAt.getTime()) && cachedExpiresAt >= new Date());
+            if (cachedStillValid) {
+                console.warn(`[VERIFICATION CODE] Falling back to in-memory console-mode code for ${normalizedEmail}.`);
+                isValidCode = true;
+            } else {
+                console.warn(`[VERIFICATION CODE] Invalid code attempt for ${normalizedEmail}. Entered=${normalizedCode}`);
+                if (cached) {
+                    console.warn(`[VERIFICATION CODE] Latest console-mode code for ${normalizedEmail} is ${cached.code} (expires ${cached.expiresAt})`);
+                }
+            }
+        }
+
+        if (!isValidCode) {
             return res.status(400).json({ error: 'Invalid verification code' });
         }
 
         await db.execute('UPDATE email_verification_codes SET verified_at = ? WHERE id = ?', [new Date().toISOString(), row.id]);
+        if (isConsoleEmailMode) {
+            devConsoleVerificationCodes.delete(getVerificationCacheKey(normalizedEmail, normalizedPurpose));
+        }
         const verificationToken = issueRegistrationVerificationToken(normalizedEmail);
         return res.json({ success: true, verificationToken });
     } catch (error) {
@@ -430,14 +476,17 @@ export const verifyEmailVerificationCode = async (req: Request, res: Response) =
 
 export const registerOrg = async (req: Request, res: Response) => {
     console.log('Register Request Body:', req.body);
-    const { orgName, userName, username, email, password, skills, location, verificationToken } = req.body;
-    const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
-    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-
-    if (!orgName || !userName || !normalizedUsername || !normalizedEmail || !password || !verificationToken) {
-        return res.status(400).json({ error: 'Missing required fields' });
+    const parsed = orgRegistrationSchema.safeParse(req.body);
+    if (!parsed.success) {
+        console.warn('RegisterOrg validation failed:', parsed.error.format());
+        return res.status(400).json({ error: 'Invalid registration payload', details: parsed.error.errors });
     }
+    const { orgName, userName, username, email, password, skills, location, verificationToken, phoneNumber } = parsed.data;
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
+
     if (!validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
+        console.warn('Registration failed verification token check for email:', normalizedEmail);
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
     }
 
@@ -589,13 +638,19 @@ export const getAllUsers = async (_req: Request, res: Response) => {
 };
 
 export const login = async (req: Request, res: Response) => {
-    console.log('Login Request:', req.body);
     const { email, identifier, password } = req.body;
     const normalizedIdentifier = typeof identifier === 'string'
         ? identifier.trim().toLowerCase()
         : typeof email === 'string'
             ? email.trim().toLowerCase()
             : '';
+
+    // Validate input with Zod
+    const validation = loginSchema.safeParse({ email: normalizedIdentifier, password });
+    if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors[0].message });
+    }
+
     if (!normalizedIdentifier || typeof password !== 'string' || !password) {
         return res.status(400).json({ error: 'Email/username and password are required' });
     }
@@ -709,6 +764,12 @@ export const registerUser = async (req: Request, res: Response) => {
     const { email, password, userName, username, orgId, joinedBoardIds, phoneNumber, skills, location, verificationToken } = req.body;
     const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+    // Validate input with Zod
+    const validation = registerSchema.safeParse({ name: userName, email: normalizedEmail, password });
+    if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors[0].message });
+    }
 
     // Basic Validation
     if (!normalizedEmail || !normalizedUsername || !password || !userName || !orgId || !verificationToken) {
@@ -2546,7 +2607,7 @@ export const switchOrganization = async (req: AuthenticatedRequest, res: Respons
         const nextRole = currentUser.role === 'super_admin' ? 'super_admin' : 'member';
 
         await db.execute(
-            'UPDATE users SET org_id = ?, role = ? WHERE id = ?',
+            'UPDATE users SET org_id = ?, role = ?, last_board_id = NULL WHERE id = ?',
             [targetOrgId, nextRole, userId]
         );
 
@@ -2691,7 +2752,7 @@ export const getUserProfile = async (req: AuthenticatedRequest, res: Response) =
 
     try {
         // 1. Get User Details
-        const user = first((await db.query('SELECT id, name, username, email, role, phone_number, skills, location, org_id FROM users WHERE id = ?', [userId])).rows);
+        const user = first((await db.query('SELECT id, name, username, email, role, phone_number, skills, location, org_id, last_board_id FROM users WHERE id = ?', [userId])).rows);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         // 2. Get Organization Details

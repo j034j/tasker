@@ -2,7 +2,11 @@ import { useEffect, useMemo } from 'react';
 import { useStore } from '@/lib/store';
 import { api } from '@/lib/axios';
 import { Button } from '@/components/ui/Button';
-import { jsPDF } from 'jspdf';
+
+type JsPdfModule = typeof import('jspdf');
+type JsPdfInstance = InstanceType<JsPdfModule['jsPDF']>;
+
+const loadJsPdf = () => import('jspdf');
 
 interface ReportingSystemPageProps {
     weekStart: string;
@@ -311,13 +315,14 @@ export function ReportingSystemPage({
         URL.revokeObjectURL(url);
     };
 
-    const handleExportPdf = () => {
+    const handleExportPdf = async () => {
         if (!reportingOverview) return;
-        const doc = buildPdfDocument();
+        const doc = await buildPdfDocument();
         doc.save(`tasker-report-${reportingOverview.week_start}.pdf`);
     };
 
-    const buildPdfDocument = () => {
+    const buildPdfDocument = async (): Promise<JsPdfInstance> => {
+        const { jsPDF } = await loadJsPdf();
         if (!reportingOverview) {
             return new jsPDF({ unit: 'pt', format: 'a4' });
         }
@@ -415,7 +420,7 @@ export function ReportingSystemPage({
 
         const fileName = `tasker-report-${reportingOverview.week_start}.${format}`;
         const blob = format === 'pdf'
-            ? new Blob([buildPdfDocument().output('arraybuffer')], { type: 'application/pdf' })
+            ? new Blob([(await buildPdfDocument()).output('arraybuffer')], { type: 'application/pdf' })
             : new Blob([buildReportDocHtml()], { type: 'application/msword' });
         const fileBase64 = await blobToBase64(blob);
         const to = recipientsInput.split(',').map((item) => item.trim()).filter(Boolean);

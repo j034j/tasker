@@ -2,14 +2,11 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import type { JwtPayload } from 'jsonwebtoken';
+import db from './db.js';
 
-const isProduction = process.env.NODE_ENV === 'production';
-const JWT_SECRET = process.env.JWT_SECRET || (!isProduction ? 'dev_jwt_secret_change_me' : undefined);
+const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-    throw new Error('Missing required env var: JWT_SECRET');
-}
-if (!process.env.JWT_SECRET && !isProduction) {
-    console.warn('JWT_SECRET not set. Using temporary development fallback secret.');
+    throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -28,22 +25,33 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
         return res.status(401).json({ error: 'Missing token' });
     }
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) {
+    Promise.resolve()
+        .then(async () => {
+            const payload = jwt.verify(token, JWT_SECRET) as JwtPayload & { userId?: string };
+            if (!payload?.userId) {
+                return res.status(401).json({ error: 'Invalid token payload' });
+            }
+
+            const userRow = (await db.query(
+                'SELECT org_id, role FROM users WHERE id = ?',
+                [payload.userId]
+            )).rows[0] as { org_id?: string; role?: string } | undefined;
+
+            if (!userRow?.org_id || !userRow?.role) {
+                return res.status(401).json({ error: 'User not found' });
+            }
+
+            (req as AuthenticatedRequest).user = {
+                userId: payload.userId,
+                orgId: userRow.org_id,
+                role: userRow.role
+            };
+            next();
+        })
+        .catch((err) => {
             console.error('Token verification failed:', err);
             return res.status(401).json({ error: 'Invalid or expired token' });
-        }
-        const payload = user as JwtPayload & { userId: string; orgId: string; role: string };
-        if (!payload?.userId || !payload?.orgId || !payload?.role) {
-            return res.status(401).json({ error: 'Invalid token payload' });
-        }
-        (req as AuthenticatedRequest).user = {
-            userId: payload.userId,
-            orgId: payload.orgId,
-            role: payload.role
-        };
-        next();
-    });
+        });
 };
 
 export const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {

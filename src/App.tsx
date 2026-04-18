@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import { KanbanBoard } from './components/KanbanBoard';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/Button';
@@ -8,18 +7,20 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { AuthScreen } from './components/AuthScreen';
 import { DiscoveryModal } from './components/DiscoveryModal';
 import { CreateBoardModal } from './components/CreateBoardModal';
+import { ToastContainer } from './components/Toast';
 import { Plus, Trash2, LogOut, Archive, UserMinus, Globe, Search, User as UserIcon, ChartColumnIncreasing, CalendarDays, LayoutGrid, ShieldCheck, House } from 'lucide-react';
-import { ProfilePage } from './components/ProfilePage';
 import { NotificationPopover } from './components/NotificationPopover';
 import { SuperAdminRegister } from './components/SuperAdminRegister';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { ForgotPassword } from './components/ForgotPassword';
 import { ResetPassword } from './components/ResetPassword';
-import { ReportingSystemPage } from './components/ReportingSystemPage';
-import { WeeklyTasksPage } from './components/WeeklyTasksPage';
-import { BoardsOverviewPage } from './components/BoardsOverviewPage';
-import { OrgSuperAdminAccessPage } from './components/OrgSuperAdminAccessPage';
 import { Navigate, Route, Routes } from 'react-router-dom';
+
+const ProfilePage = lazy(() => import('./components/ProfilePage').then((module) => ({ default: module.ProfilePage })));
+const ReportingSystemPage = lazy(() => import('./components/ReportingSystemPage').then((module) => ({ default: module.ReportingSystemPage })));
+const WeeklyTasksPage = lazy(() => import('./components/WeeklyTasksPage').then((module) => ({ default: module.WeeklyTasksPage })));
+const BoardsOverviewPage = lazy(() => import('./components/BoardsOverviewPage').then((module) => ({ default: module.BoardsOverviewPage })));
+const OrgSuperAdminAccessPage = lazy(() => import('./components/OrgSuperAdminAccessPage').then((module) => ({ default: module.OrgSuperAdminAccessPage })));
 
 const getCurrentWeekStart = () => {
   const now = new Date();
@@ -77,6 +78,14 @@ const hasFollower = (followers: string | undefined, userId: string | undefined) 
 
 const canManageBoard = (role?: string) => role === 'admin' || role === 'org_super_admin' || role === 'super_admin';
 
+function ShellFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center px-6 text-sm text-zinc-500 dark:text-zinc-400">
+      Loading view...
+    </div>
+  );
+}
+
 function DashboardShell() {
   const { board, boards, fetchBoard, fetchBoards, orgName, orgId, logout, deleteBoard, updateBoard, deleteOrganization, toggleBoardFollow, currentUser, fetchUserProfile, userProfile, fetchNotifications, fetchMyInvites } = useStore();
   const { language, setLanguage, t } = useLanguage();
@@ -88,14 +97,22 @@ function DashboardShell() {
   const [weekStart, setWeekStart] = useState(getCurrentWeekStart());
   const [selectedBoardWeekKey, setSelectedBoardWeekKey] = useState(getWeekKey(new Date()));
   const canAccessOrgAdminWorkflow = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
-  const recentWeekOptions = getRecentWeekOptions();
+  const recentWeekOptions = useMemo(() => getRecentWeekOptions(), []);
 
   // Filter boards for the dropdown (Joined/Followed only)
   // If user created it, they are auto-followed now.
-  const myBoards = boards.filter((b) => hasFollower(b.followers, currentUser?.id));
-  const weekScopedBoards = myBoards.filter((b) => getWeekKey(parseBoardDate(b.created_at)) === selectedBoardWeekKey);
-  const selectableBoards = weekScopedBoards.length > 0 ? weekScopedBoards : myBoards;
-  const boardIndex = board ? selectableBoards.findIndex((b) => b.id === board.id) + 1 : 0;
+  const myBoards = useMemo(
+    () => boards.filter((entry) => hasFollower(entry.followers, currentUser?.id)),
+    [boards, currentUser?.id]
+  );
+  const selectableBoards = useMemo(() => {
+    const weekScopedBoards = myBoards.filter((entry) => getWeekKey(parseBoardDate(entry.created_at)) === selectedBoardWeekKey);
+    return weekScopedBoards.length > 0 ? weekScopedBoards : myBoards;
+  }, [myBoards, selectedBoardWeekKey]);
+  const boardIndex = useMemo(
+    () => (board ? selectableBoards.findIndex((entry) => entry.id === board.id) + 1 : 0),
+    [board, selectableBoards]
+  );
 
   useEffect(() => {
     if (orgId) {
@@ -111,6 +128,82 @@ function DashboardShell() {
     fetchNotifications();
     fetchMyInvites();
   }, [fetchNotifications, fetchMyInvites]);
+
+  useEffect(() => {
+    let isRefreshing = false;
+
+    const refreshRemoteState = async () => {
+      if (document.visibilityState === 'hidden' || isRefreshing) return;
+
+      isRefreshing = true;
+      try {
+        await fetchUserProfile();
+
+        const latestState = useStore.getState();
+        if (latestState.orgId) {
+          await fetchBoards(latestState.orgId);
+        }
+
+        await Promise.all([
+          fetchNotifications(),
+          fetchMyInvites(),
+        ]);
+
+        const activeBoardId = useStore.getState().board?.id;
+        if (activeBoardId) {
+          await fetchBoard(activeBoardId);
+        }
+      } catch (error) {
+        console.error('Failed to refresh remote desktop state', error);
+      } finally {
+        isRefreshing = false;
+      }
+    };
+
+    const handleFocus = () => {
+      refreshRemoteState().catch(console.error);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshRemoteState().catch(console.error);
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshRemoteState().catch(console.error);
+      }
+    }, 60000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchBoard, fetchBoards, fetchMyInvites, fetchNotifications, fetchUserProfile]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || !event.key.startsWith('tasker_')) return;
+
+      const nextToken = localStorage.getItem('tasker_token');
+      if (!nextToken) {
+        logout();
+        return;
+      }
+
+      fetchUserProfile().catch(console.error);
+      fetchNotifications();
+      fetchMyInvites();
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [fetchMyInvites, fetchNotifications, fetchUserProfile, logout]);
 
   // Auto-load last viewed board or first available
   useEffect(() => {
@@ -131,7 +224,7 @@ function DashboardShell() {
         fetchBoard(targetBoard.id);
       }
     }
-  }, [boards, board, fetchBoard, currentUser, selectedBoardWeekKey]);
+  }, [board, currentUser?.id, fetchBoard, selectableBoards]);
 
   useEffect(() => {
     if (!board || selectableBoards.length === 0) return;
@@ -261,6 +354,12 @@ function DashboardShell() {
                   ))}
                 </select>
 
+                {canManageBoard(currentUser?.role) && (
+                  <Button onClick={handleCreateBoard} size="sm" variant="ghost" className="h-7 text-xs px-2 gap-1 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20" title={t('dash_new_btn')}>
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+
                 <Button
                   onClick={() => { setDiscoveryTab('boards'); setIsDiscoveryOpen(true); }}
                   size="sm" variant="ghost" className="h-7 w-7 p-0" title={t('dash_browse_title')}
@@ -361,39 +460,41 @@ function DashboardShell() {
       </header>
 
       <main className="flex min-w-0 flex-1 overflow-hidden">
-        {view === 'profile' ? (
-          <ProfilePage onBack={() => setView('board')} />
-        ) : view === 'reporting' ? (
-          <ReportingSystemPage
-            weekStart={weekStart}
-            onWeekChange={setWeekStart}
-            onOpenWeeklyTasks={() => setView('weekly')}
-            onOpenBoardsOverview={() => setView('boards-overview')}
-          />
-        ) : view === 'weekly' ? (
-          <WeeklyTasksPage weekStart={weekStart} onWeekChange={setWeekStart} />
-        ) : view === 'boards-overview' ? (
-          <BoardsOverviewPage weekStart={weekStart} />
-        ) : view === 'org-admin-access' ? (
-          <OrgSuperAdminAccessPage weekStart={weekStart} />
-        ) : board ? (
-          <div className="flex-1 min-w-0 px-2 pb-3 md:px-3 xl:pr-0">
-            <KanbanBoard sortByUrgency={sortByUrgency} setSortByUrgency={setSortByUrgency} />
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
-            <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-2xl flex items-center justify-center mb-2">
-              <div className="w-8 h-8 rounded-md border-2 border-dashed border-zinc-300 dark:border-zinc-600" />
+        <Suspense fallback={<ShellFallback />}>
+          {view === 'profile' ? (
+            <ProfilePage onBack={() => setView('board')} />
+          ) : view === 'reporting' ? (
+            <ReportingSystemPage
+              weekStart={weekStart}
+              onWeekChange={setWeekStart}
+              onOpenWeeklyTasks={() => setView('weekly')}
+              onOpenBoardsOverview={() => setView('boards-overview')}
+            />
+          ) : view === 'weekly' ? (
+            <WeeklyTasksPage weekStart={weekStart} onWeekChange={setWeekStart} />
+          ) : view === 'boards-overview' ? (
+            <BoardsOverviewPage weekStart={weekStart} />
+          ) : view === 'org-admin-access' ? (
+            <OrgSuperAdminAccessPage weekStart={weekStart} />
+          ) : board ? (
+            <div className="flex-1 min-w-0 px-2 pb-3 md:px-3 xl:pr-0">
+              <KanbanBoard sortByUrgency={sortByUrgency} setSortByUrgency={setSortByUrgency} />
             </div>
-            <p>{t('dash_empty_msg')}</p>
-            {myBoards.length === 0 && (
-              <div className="flex gap-2">
-                {canManageBoard(currentUser?.role) && <Button onClick={handleCreateBoard}>{t('dash_create_btn')}</Button>}
-                <Button onClick={() => { setDiscoveryTab('boards'); setIsDiscoveryOpen(true); }} variant="outline">{t('dash_browse_all')}</Button>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
+              <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-2xl flex items-center justify-center mb-2">
+                <div className="w-8 h-8 rounded-md border-2 border-dashed border-zinc-300 dark:border-zinc-600" />
               </div>
-            )}
-          </div>
-        )}
+              <p>{t('dash_empty_msg')}</p>
+              {myBoards.length === 0 && (
+                <div className="flex gap-2">
+                  {canManageBoard(currentUser?.role) && <Button onClick={handleCreateBoard}>{t('dash_create_btn')}</Button>}
+                  <Button onClick={() => { setDiscoveryTab('boards'); setIsDiscoveryOpen(true); }} variant="outline">{t('dash_browse_all')}</Button>
+                </div>
+              )}
+            </div>
+          )}
+        </Suspense>
         {view === 'board' && (
           <div className="hidden w-72 shrink-0 overflow-y-auto border-l border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900 xl:block">
             <RankingConfigPanel />
@@ -418,7 +519,9 @@ function App() {
   const { authToken, currentUser } = useStore();
 
   return (
-    <Routes>
+    <>
+      <ToastContainer />
+      <Routes>
       <Route path="/super-admin" element={<SuperAdminRegister />} />
       <Route path="/forgot-password" element={authToken ? <Navigate to="/" replace /> : <ForgotPassword />} />
       <Route path="/reset-password" element={authToken ? <Navigate to="/" replace /> : <ResetPassword />} />
@@ -436,6 +539,7 @@ function App() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 

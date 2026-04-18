@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Tag } from 'lucide-react';
 import { api } from '@/lib/axios';
 import { useStore } from '@/lib/store';
@@ -71,15 +71,33 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
 
     const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        // Fetch global weather impact when modal opens if no location set
-        if (!projectLocation) {
-            fetchWeatherImpact();
-        } else {
-            // Trigger local check if location exists
-            handleLocationBlur();
+    const loadWeatherForLocation = useCallback(async (location: string) => {
+        if (!location) return;
+        const { getCoordinates, fetchWeather, getWeatherImpact } = await import('@/lib/weatherService');
+        const coords = await getCoordinates(location);
+        if (coords) {
+            const weather = await fetchWeather(coords.latitude, coords.longitude);
+            const impact = getWeatherImpact(weather);
+            setLocalWeatherImpact(impact);
+            setWeatherCode(weather.conditionCode);
+            if (weather.season) setSeason(weather.season);
         }
     }, []);
+
+    const handleLocationBlur = useCallback(async () => {
+        if (!projectLocation) return;
+        await loadWeatherForLocation(projectLocation);
+    }, [loadWeatherForLocation, projectLocation]);
+
+    useEffect(() => {
+        const initialLocation = task?.project_location?.trim() || '';
+        if (!initialLocation) {
+            fetchWeatherImpact();
+            return;
+        }
+
+        void loadWeatherForLocation(initialLocation);
+    }, [fetchWeatherImpact, loadWeatherForLocation, task?.id, task?.project_location]);
 
     useEffect(() => {
         if (!task?.id || !canOverrideRanking) return;
@@ -122,21 +140,6 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
         };
         runCalculation();
     }, [title, description, dueDate, fundingNeeded, peopleRequired, weatherSensitive, weatherImpact, localWeatherImpact, skills, season, currentSeason]);
-
-    const handleLocationBlur = async () => {
-        if (!projectLocation) return;
-        const { getCoordinates, fetchWeather, getWeatherImpact } = await import('@/lib/weatherService');
-        const coords = await getCoordinates(projectLocation);
-        if (coords) {
-            // Update location name to be pretty (Optional, maybe annoying if user typed specific thing)
-            // setProjectLocation(`${coords.name}, ${coords.country}`);
-            const weather = await fetchWeather(coords.latitude, coords.longitude);
-            const impact = getWeatherImpact(weather);
-            setLocalWeatherImpact(impact);
-            setWeatherCode(weather.conditionCode);
-            if (weather.season) setSeason(weather.season); // Auto-set season
-        }
-    };
 
     const handleAutoTag = async () => {
         const { generateTags } = await import('@/lib/autoTag');

@@ -270,14 +270,21 @@ export const initDB = async () => {
       FOREIGN KEY(invitee_user_id) REFERENCES users(id)
     )`,
     'CREATE INDEX IF NOT EXISTS idx_task_invites_invitee ON task_invites(invitee_user_id)',
-    'CREATE INDEX IF NOT EXISTS idx_task_invites_task ON task_invites(task_id)'
+    'CREATE INDEX IF NOT EXISTS idx_task_invites_task ON task_invites(task_id)',
+    'CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to)',
+    'CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id)',
+    'CREATE INDEX IF NOT EXISTS idx_columns_board_id ON columns(board_id)',
+    'CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(org_id)',
+    'CREATE INDEX IF NOT EXISTS idx_boards_org_id ON boards(org_id)'
   ];
 
+  const isDebug = process.env.DEBUG === '1';
   for (const sql of migrations) {
     try {
       await db.execute(sql);
+      if (isDebug) console.log('[DB] Migration applied:', sql.slice(0, 60) + '...');
     } catch {
-      // Ignore duplicate-column and already-exists migration failures.
+      if (isDebug) console.log('[DB] Migration skipped (may already exist):', sql.slice(0, 60) + '...');
     }
   }
   console.log('Database Initialized.');

@@ -43,7 +43,7 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     // Initial Fetch
     useEffect(() => {
         fetchUserProfile();
-    }, []);
+    }, [fetchUserProfile]);
 
     // Sync if user changes (e.g. re-login or store update)
     useEffect(() => {

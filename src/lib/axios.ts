@@ -22,6 +22,7 @@ api.interceptors.response.use(
             localStorage.removeItem('tasker_token');
             localStorage.removeItem('tasker_user');
             localStorage.removeItem('tasker_org_id');
+            localStorage.removeItem('tasker_org_name');
             localStorage.removeItem('tasker_last_board_id');
             if (window.location.pathname !== '/') {
                 window.location.href = '/';

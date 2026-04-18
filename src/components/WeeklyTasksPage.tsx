@@ -80,7 +80,7 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
             });
     }, [orgId, selectedMonth, selectedWeek, fetchWeeklyObjective, fetchWeeklyObjectiveHistory]);
 
-    const weeklyTasks = reportingOverview?.weekly_tasks ?? [];
+    const weeklyTasks = useMemo(() => reportingOverview?.weekly_tasks ?? [], [reportingOverview?.weekly_tasks]);
 
     const peopleOptions = useMemo(() => {
         const people = new Set<string>();

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Button } from './ui/Button';
-import { VerificationCodeModal } from './VerificationCodeModal';
 import { api } from '@/lib/axios';
 import { useStore } from '@/lib/store';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -70,10 +69,8 @@ export function AuthScreen() {
     const [verificationToken, setVerificationToken] = useState<string | null>(null);
     const [verificationCodeSent, setVerificationCodeSent] = useState(false);
     const [verificationBusy, setVerificationBusy] = useState(false);
-
-    // Modal State
-    const [showVerificationModal, setShowVerificationModal] = useState(false);
-    const [modalCode, setModalCode] = useState('');
+    const [pendingConsoleVerificationCode, setPendingConsoleVerificationCode] = useState<string | null>(null);
+    const [pendingConsoleVerificationToken, setPendingConsoleVerificationToken] = useState<string | null>(null);
 
     // Join Flow State
     const [foundOrgs, setFoundOrgs] = useState<{ id: string; name: string; creatorName: string; boards: { id: string; name: string }[] }[] | null>(null);
@@ -136,10 +133,14 @@ export function AuthScreen() {
             setVerificationToken(null);
             setVerificationCode('');
             setVerificationCodeSent(false);
+            setPendingConsoleVerificationCode(null);
+            setPendingConsoleVerificationToken(null);
             return;
         }
         setVerificationToken(null);
         setVerificationCode('');
+        setPendingConsoleVerificationCode(null);
+        setPendingConsoleVerificationToken(null);
     }, [email, mode]);
 
     useEffect(() => {
@@ -184,12 +185,20 @@ export function AuthScreen() {
         try {
             const { data } = await api.post('/auth/email-verification/request', { email, purpose: 'register' });
             setVerificationCodeSent(true);
+            setVerificationCode('');
             setVerificationToken(null);
+            setPendingConsoleVerificationCode(data.verificationCode ?? null);
+            setPendingConsoleVerificationToken(data.verificationToken ?? null);
             if (data.verificationCode) {
-                setModalCode(data.verificationCode);
-                setShowVerificationModal(true);
+                setError({
+                    message: 'Verification code generated in console mode.',
+                    hint: 'Check the backend console output for the latest 6-digit code, then enter it below. Any previous code is now invalid.'
+                });
             } else {
-                setError({ message: 'Verification code sent. Check your inbox.', hint: 'Enter the 6-digit code below to continue registration.' });
+                setError({
+                    message: 'Verification code sent. Check your inbox.',
+                    hint: 'Enter the latest 6-digit code below to continue registration. Any previous code is now invalid.'
+                });
             }
         } catch (err: unknown) {
             setError(normalizeAuthError(mode, err, 'Failed to send verification code'));
@@ -206,6 +215,17 @@ export function AuthScreen() {
         setVerificationBusy(true);
         setError(null);
         try {
+            if (pendingConsoleVerificationCode && pendingConsoleVerificationToken) {
+                if (verificationCode.trim() !== pendingConsoleVerificationCode) {
+                    setError({ message: 'Invalid verification code.', hint: 'Use the latest code printed in the backend console.' });
+                    return;
+                }
+                setVerificationToken(pendingConsoleVerificationToken);
+                setPendingConsoleVerificationCode(null);
+                setPendingConsoleVerificationToken(null);
+                setError({ message: 'Email verified successfully.' });
+                return;
+            }
             const { data } = await api.post('/auth/email-verification/verify', {
                 email,
                 code: verificationCode,
@@ -355,7 +375,7 @@ export function AuthScreen() {
                                     value={orgName}
                                     onChange={(e) => setOrgName(e.target.value)}
                                     className="w-full px-4 py-3 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-50/50 dark:bg-zinc-900/50 backdrop-blur-sm text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-medium shadow-sm"
-                                    placeholder="Acme Corp"
+                                    placeholder="Kooperative Durnau"
                                 />
                             </div>
                         )}
@@ -459,7 +479,7 @@ export function AuthScreen() {
                                     value={userName}
                                     onChange={(e) => setUserName(e.target.value)}
                                     className="w-full px-4 py-3 rounded-2xl border border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-50/50 dark:bg-zinc-900/50 backdrop-blur-sm text-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm font-medium shadow-sm"
-                                    placeholder="John Doe"
+                                    placeholder="Johann Doe"
                                 />
                             </div>
                         )}
@@ -531,7 +551,9 @@ export function AuthScreen() {
                                         No matching organizations found.
                                     </div>
                                 )}
-                                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">We send a 6-digit verification code. It expires in 24 hours.</p>
+                                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                                    We use a 6-digit verification code. In console mode, check the backend console output. Requesting a new code invalidates the previous one.
+                                </p>
                             </div>
                         )}
 
@@ -636,12 +658,6 @@ export function AuthScreen() {
                     </div>
                 </div>
             </div>
-            {showVerificationModal && (
-                <VerificationCodeModal
-                    code={modalCode}
-                    onClose={() => setShowVerificationModal(false)}
-                />
-            )}
         </>
     );
 }

@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { api } from './axios';
 import { type RankingWeights, DEFAULT_WEIGHTS } from './rankingEngine';
+import { useToastStore } from './toast';
 
 export interface Task {
     id: string;
@@ -64,6 +65,106 @@ export interface User {
     skills?: string;
     location?: string;
 }
+
+const STORAGE_KEYS = {
+    token: 'tasker_token',
+    user: 'tasker_user',
+    orgId: 'tasker_org_id',
+    orgName: 'tasker_org_name',
+    lastBoardId: 'tasker_last_board_id',
+} as const;
+
+type UserPayload = Partial<User> & {
+    lastBoardId?: string | null;
+    last_board_id?: string | null;
+    phoneNumber?: string | null;
+    phone_number?: string | null;
+};
+
+const syncLastBoardStorage = (boardId?: string | null) => {
+    if (typeof boardId === 'string' && boardId.trim().length > 0) {
+        localStorage.setItem(STORAGE_KEYS.lastBoardId, boardId);
+        return;
+    }
+
+    localStorage.removeItem(STORAGE_KEYS.lastBoardId);
+};
+
+const normalizeUser = (value: unknown): User | null => {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const user = value as UserPayload;
+    if (
+        typeof user.id !== 'string'
+        || typeof user.name !== 'string'
+        || typeof user.email !== 'string'
+        || typeof user.role !== 'string'
+    ) {
+        return null;
+    }
+
+    const lastBoardId = typeof user.lastBoardId === 'string'
+        ? user.lastBoardId
+        : typeof user.last_board_id === 'string'
+            ? user.last_board_id
+            : undefined;
+
+    const phoneNumber = typeof user.phone_number === 'string'
+        ? user.phone_number
+        : typeof user.phoneNumber === 'string'
+            ? user.phoneNumber
+            : undefined;
+
+    return {
+        id: user.id,
+        name: user.name,
+        username: typeof user.username === 'string' ? user.username : undefined,
+        email: user.email,
+        role: user.role as User['role'],
+        lastBoardId,
+        phone_number: phoneNumber,
+        skills: typeof user.skills === 'string' ? user.skills : undefined,
+        location: typeof user.location === 'string' ? user.location : undefined,
+    };
+};
+
+const readStoredUser = () => {
+    const raw = localStorage.getItem(STORAGE_KEYS.user);
+    if (!raw) {
+        return null;
+    }
+
+    try {
+        return normalizeUser(JSON.parse(raw));
+    } catch (error) {
+        console.error('Failed to parse stored user session', error);
+        localStorage.removeItem(STORAGE_KEYS.user);
+        return null;
+    }
+};
+
+const persistUser = (value: unknown) => {
+    const user = normalizeUser(value);
+    if (!user) {
+        localStorage.removeItem(STORAGE_KEYS.user);
+        syncLastBoardStorage(null);
+        return null;
+    }
+
+    localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
+    syncLastBoardStorage(user.lastBoardId ?? null);
+    return user;
+};
+
+const clearSessionStorage = () => {
+    localStorage.removeItem(STORAGE_KEYS.token);
+    localStorage.removeItem(STORAGE_KEYS.user);
+    localStorage.removeItem(STORAGE_KEYS.orgId);
+    localStorage.removeItem(STORAGE_KEYS.orgName);
+    localStorage.removeItem(STORAGE_KEYS.lastBoardId);
+};
 export interface RecurringDuty {
     id?: string;
     title: string;
@@ -335,9 +436,9 @@ export const useStore = create<AppState>((set, get) => ({
     currentSeason: 'Spring', // Default
     rankingWeights: DEFAULT_WEIGHTS,
 
-    orgName: localStorage.getItem('tasker_org_name') || null,
+    orgName: localStorage.getItem(STORAGE_KEYS.orgName) || null,
     setOrgName: (name) => {
-        localStorage.setItem('tasker_org_name', name);
+        localStorage.setItem(STORAGE_KEYS.orgName, name);
         set({ orgName: name });
     },
 
@@ -349,7 +450,7 @@ export const useStore = create<AppState>((set, get) => ({
             const showArchived = get().showArchived;
             const { data } = await api.get(`/boards/${id}?includeArchived=${showArchived}`);
             set({ board: data });
-            localStorage.setItem('tasker_last_board_id', id);
+            localStorage.setItem(STORAGE_KEYS.lastBoardId, id);
 
             // Sync to backend if logged in
             if (get().authToken) {
@@ -358,6 +459,7 @@ export const useStore = create<AppState>((set, get) => ({
             }
         } catch (e) {
             console.error(e);
+            useToastStore.getState().addToast('Failed to load board', 'error');
         } finally {
             set({ loading: false });
         }
@@ -378,6 +480,7 @@ export const useStore = create<AppState>((set, get) => ({
             get().fetchBoard(data.id);
         } catch (e) {
             console.error(e);
+            useToastStore.getState().addToast('Failed to create board', 'error');
         }
     },
     fetchBoards: async (orgId) => {
@@ -386,6 +489,7 @@ export const useStore = create<AppState>((set, get) => ({
             set({ boards: data });
         } catch (e) {
             console.error(e);
+            useToastStore.getState().addToast('Failed to create board', 'error');
         }
     },
     fetchReportingOverview: async (orgId, weekStart) => {
@@ -437,6 +541,7 @@ export const useStore = create<AppState>((set, get) => ({
             // set({ weatherImpact: impact, currentSeason: weather.season });
         } catch (e) {
             console.error(e);
+            useToastStore.getState().addToast('Failed to create board', 'error');
         }
     },
 
@@ -531,6 +636,7 @@ export const useStore = create<AppState>((set, get) => ({
             }
         } catch (e) {
             console.error('Failed to delete board', e);
+            useToastStore.getState().addToast('Failed to delete board', 'error');
         }
     },
 
@@ -586,16 +692,21 @@ export const useStore = create<AppState>((set, get) => ({
     switchOrganization: async (newOrgId: string) => {
         try {
             const { data } = await api.put('/users/me/org', { orgId: newOrgId });
+            const nextUser = get().currentUser
+                ? persistUser({ ...get().currentUser, role: data.role, lastBoardId: null })
+                : null;
             set((state) => ({
                 orgId: data.orgId,
                 orgName: data.orgName,
                 authToken: state.authToken,
-                currentUser: state.currentUser ? { ...state.currentUser, role: data.role } : null,
+                currentUser: nextUser,
                 board: null,
-                boards: []
+                boards: [],
+                userProfile: null
             }));
-            localStorage.setItem('tasker_org_id', data.orgId);
-            localStorage.setItem('tasker_org_name', data.orgName);
+            localStorage.setItem(STORAGE_KEYS.orgId, data.orgId);
+            localStorage.setItem(STORAGE_KEYS.orgName, data.orgName);
+            syncLastBoardStorage(null);
         } catch (err) {
             console.error('Failed to switch org', err);
             throw err;
@@ -628,39 +739,25 @@ export const useStore = create<AppState>((set, get) => ({
     },
 
     // Auth
-    authToken: localStorage.getItem('tasker_token') || null,
-    currentUser: localStorage.getItem('tasker_user') ? JSON.parse(localStorage.getItem('tasker_user')!) : null,
+    authToken: localStorage.getItem(STORAGE_KEYS.token) || null,
+    currentUser: readStoredUser(),
 
-    orgId: localStorage.getItem('tasker_org_id') || null,
+    orgId: localStorage.getItem(STORAGE_KEYS.orgId) || null,
 
     login: (token, user, orgName, orgId) => {
-        localStorage.setItem('tasker_token', token);
-        localStorage.setItem('tasker_user', JSON.stringify(user));
-        localStorage.setItem('tasker_org_id', orgId);
-        localStorage.setItem('tasker_org_name', orgName);
-        if (user.lastBoardId) {
-            localStorage.setItem('tasker_last_board_id', user.lastBoardId);
-        } else {
-            // New session with no last board from server -> keep local or clear?
-            // If we want sync to source of truth (server), we should probably respect it.
-            // But if server is NULL (new user), local might have something?
-            // Let's rely on server. If server says nothing, we stick with what we have (maybe user was just here).
-            // Actually, if user switches devices, we want server state.
-            // If user logs in new, we might want to clear old user's state if we didn't full logout?
-            // Logout clears it. So we are good.
-        }
-        console.log('Login State Update:', { user, orgId, lastBoardId: user.lastBoardId });
-        set({ authToken: token, currentUser: user, orgName, orgId });
+        const normalizedUser = persistUser(user);
+        localStorage.setItem(STORAGE_KEYS.token, token);
+        localStorage.setItem(STORAGE_KEYS.orgId, orgId);
+        localStorage.setItem(STORAGE_KEYS.orgName, orgName);
+        console.log('Login State Update:', { user: normalizedUser, orgId, lastBoardId: normalizedUser?.lastBoardId });
+        set({ authToken: token, currentUser: normalizedUser, orgName, orgId });
         get().fetchNotifications();
         get().fetchMyInvites();
     },
 
     logout: () => {
-        localStorage.removeItem('tasker_token');
-        localStorage.removeItem('tasker_user');
-        localStorage.removeItem('tasker_org_id');
-        localStorage.removeItem('tasker_org_name');
-        set({ authToken: null, currentUser: null, board: null, boards: [], orgName: null, orgId: null, notifications: [], taskInvites: [] });
+        clearSessionStorage();
+        set({ authToken: null, currentUser: null, board: null, boards: [], orgName: null, orgId: null, userProfile: null, notifications: [], taskInvites: [] });
     },
 
     fetchNotifications: async () => {
@@ -669,8 +766,9 @@ export const useStore = create<AppState>((set, get) => ({
         try {
             const res = await api.get('/notifications');
             set({ notifications: res.data });
-        } catch (error: any) {
-            if (error?.response?.status === 401) {
+        } catch (error: unknown) {
+            const err = error as { response?: { status?: number } };
+            if (err?.response?.status === 401) {
                 get().logout();
                 return;
             }
@@ -749,9 +847,8 @@ export const useStore = create<AppState>((set, get) => ({
         try {
             const { data } = await api.put('/users/me', updates);
             if (data.success && data.user) {
-                const currentUser = get().currentUser;
-                const newUser = { ...currentUser, ...data.user };
-                localStorage.setItem('tasker_user', JSON.stringify(newUser));
+                const currentUser = get().currentUser ?? {};
+                const newUser = persistUser({ ...currentUser, ...data.user });
                 set((state) => ({
                     currentUser: newUser,
                     userProfile: state.userProfile
@@ -772,13 +869,23 @@ export const useStore = create<AppState>((set, get) => ({
     fetchUserProfile: async () => {
         try {
             const { data } = await api.get('/users/me/profile');
+            const normalizedUser = persistUser(data?.user);
+            const profileOrgId = typeof data?.organization?.id === 'string' ? data.organization.id : null;
             const profileOrgName = data?.organization?.name;
-            if (typeof profileOrgName === 'string' && profileOrgName.trim().length > 0) {
-                localStorage.setItem('tasker_org_name', profileOrgName);
-                set({ userProfile: data, orgName: profileOrgName });
-                return;
+            if (profileOrgId) {
+                localStorage.setItem(STORAGE_KEYS.orgId, profileOrgId);
             }
-            set({ userProfile: data });
+            if (typeof profileOrgName === 'string' && profileOrgName.trim().length > 0) {
+                localStorage.setItem(STORAGE_KEYS.orgName, profileOrgName);
+            }
+            set({
+                userProfile: data,
+                currentUser: normalizedUser,
+                orgId: profileOrgId ?? get().orgId,
+                orgName: typeof profileOrgName === 'string' && profileOrgName.trim().length > 0
+                    ? profileOrgName
+                    : get().orgName,
+            });
         } catch (e: unknown) {
             const err = e as { response?: { status?: number } };
             if (err?.response?.status === 401) {

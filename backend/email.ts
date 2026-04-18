@@ -15,6 +15,7 @@ type SendEmailParams = {
 const EMAIL_PROVIDER = (process.env.EMAIL_PROVIDER || '').toLowerCase();
 const EMAIL_FROM = process.env.EMAIL_FROM || '';
 const isProduction = process.env.NODE_ENV === 'production';
+export const isConsoleEmailMode = EMAIL_PROVIDER === 'console' || (!EMAIL_PROVIDER && !isProduction);
 
 const getMissingVars = (keys: string[]) => keys.filter((key) => !process.env[key]);
 
@@ -148,7 +149,7 @@ const sendWithSmtp = async ({ to, subject, html, attachments }: SendEmailParams)
 };
 
 export const sendEmail = async (params: SendEmailParams) => {
-    if (EMAIL_PROVIDER === 'console' || (!EMAIL_PROVIDER && !isProduction)) {
+    if (isConsoleEmailMode) {
         console.log('[EMAIL CONSOLE MODE]');
         console.log('To:', params.to);
         console.log('Subject:', params.subject);

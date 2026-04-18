@@ -10,11 +10,13 @@ export function NotificationPopover() {
 
     // Initial fetch
     useEffect(() => {
-        fetchNotifications();
+        void fetchNotifications();
         // Poll every 30 seconds
-        const interval = setInterval(fetchNotifications, 30000);
+        const interval = window.setInterval(() => {
+            void fetchNotifications();
+        }, 30000);
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchNotifications]);
 
     // Close on click outside
     useEffect(() => {

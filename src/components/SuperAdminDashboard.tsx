@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useStore, type Organization, type User } from '@/lib/store';
-import { Users, Building, Layers, CheckSquare, Shield, LogOut } from 'lucide-react';
+import { Users, Building, Layers, CheckSquare, Shield, LogOut, type LucideIcon } from 'lucide-react';
 import { ManageOrgModal } from './ManageOrgModal';
 import { ManageUserModal } from './ManageUserModal';
 
 export function SuperAdminDashboard() {
     const {
         currentUser, systemStats, allOrgs, allUsers,
-        fetchSystemStats, fetchAllOrgs, fetchAllUsers, deElevateSuperAdmin
+        fetchSystemStats, fetchAllOrgs, fetchAllUsers, deElevateSuperAdmin, logout
     } = useStore();
 
     const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
@@ -18,7 +18,7 @@ export function SuperAdminDashboard() {
         fetchSystemStats();
         fetchAllOrgs();
         fetchAllUsers();
-    }, []);
+    }, [fetchAllOrgs, fetchAllUsers, fetchSystemStats]);
 
     if (!currentUser || currentUser.role !== 'super_admin') {
         return <div className="p-8 text-center text-red-500 font-bold">Access Denied</div>;
@@ -73,7 +73,7 @@ export function SuperAdminDashboard() {
                             <p className="text-xs text-zinc-500 uppercase tracking-wider">Super Admin</p>
                         </div>
                         <button
-                            onClick={() => useStore.getState().logout()}
+                            onClick={logout}
                             className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
                             title="Logout"
                         >
@@ -207,8 +207,8 @@ export function SuperAdminDashboard() {
     );
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any, label: string, value?: number, color: 'blue' | 'indigo' | 'emerald' | 'amber' }) {
-    const colors: Record<string, string> = {
+function StatCard({ icon: Icon, label, value, color }: { icon: LucideIcon, label: string, value?: number, color: 'blue' | 'indigo' | 'emerald' | 'amber' }) {
+    const colors: Record<'blue' | 'indigo' | 'emerald' | 'amber', string> = {
         blue: "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400",
         indigo: "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-400",
         emerald: "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400",
