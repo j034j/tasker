@@ -1,6 +1,7 @@
-
-import { createClient, Client } from '@libsql/client';
-import { DatabaseAdapter, QueryResult } from './db_adapter';
+﻿
+import { createClient } from '@libsql/client';
+import type { Client, InValue } from '@libsql/client';
+import type { DatabaseAdapter, QueryResult } from './db_adapter.js';
 
 export class TursoAdapter implements DatabaseAdapter {
     private client: Client;
@@ -12,19 +13,19 @@ export class TursoAdapter implements DatabaseAdapter {
         });
     }
 
-    async query(sql: string, params: any[] = []): Promise<QueryResult> {
-        const rs = await this.client.execute({ sql, args: params });
+    async query(sql: string, params: unknown[] = []): Promise<QueryResult> {
+        const rs = await this.client.execute({ sql, args: params as InValue[] });
         return {
-            rows: rs.rows,
+            rows: rs.rows as Record<string, unknown>[],
             lastInsertRowid: rs.lastInsertRowid,
             changes: rs.rowsAffected
         };
     }
 
-    async execute(sql: string, params: any[] = []): Promise<QueryResult> {
-        const rs = await this.client.execute({ sql, args: params });
+    async execute(sql: string, params: unknown[] = []): Promise<QueryResult> {
+        const rs = await this.client.execute({ sql, args: params as InValue[] });
         return {
-            rows: rs.rows,
+            rows: rs.rows as Record<string, unknown>[],
             lastInsertRowid: rs.lastInsertRowid,
             changes: rs.rowsAffected
         };
@@ -34,13 +35,13 @@ export class TursoAdapter implements DatabaseAdapter {
         const tx = await this.client.transaction();
         try {
             const txAdapter: DatabaseAdapter = {
-                query: async (sql, params) => {
-                    const rs = await tx.execute({ sql, args: params });
-                    return { rows: rs.rows, changes: rs.rowsAffected, lastInsertRowid: rs.lastInsertRowid };
+                query: async (sql: string, params?: unknown[]) => {
+                    const rs = await tx.execute({ sql, args: params as InValue[] | undefined });
+                    return { rows: rs.rows as Record<string, unknown>[], changes: rs.rowsAffected, lastInsertRowid: rs.lastInsertRowid };
                 },
-                execute: async (sql, params) => {
-                    const rs = await tx.execute({ sql, args: params });
-                    return { rows: rs.rows, changes: rs.rowsAffected, lastInsertRowid: rs.lastInsertRowid };
+                execute: async (sql: string, params?: unknown[]) => {
+                    const rs = await tx.execute({ sql, args: params as InValue[] | undefined });
+                    return { rows: rs.rows as Record<string, unknown>[], changes: rs.rowsAffected, lastInsertRowid: rs.lastInsertRowid };
                 },
                 transaction: async <U>(innerAction: (db: DatabaseAdapter) => Promise<U>): Promise<U> => {
                     // Nested transactions not fully supported in this shim, just pass through or use savepoints later

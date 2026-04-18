@@ -2,20 +2,8 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Tag, Archive, RotateCcw, X } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useStore } from '@/lib/store';
-
-interface Task {
-    id: string;
-    title: string;
-    description?: string;
-    urgency: number;
-    people_required?: number;
-    skills?: string;
-    due_date?: string;
-    priority_score: number;
-    weather_sensitive?: boolean;
-    archived?: boolean;
-}
+import { getWeatherIcon } from '@/lib/weatherService';
+import { useStore, type Task } from '@/lib/store';
 
 interface TaskCardProps {
     task: Task;
@@ -27,7 +15,7 @@ interface TaskCardProps {
 
 export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActionLabel }: TaskCardProps) {
     const { t } = useLanguage();
-    const { deleteTask, toggleArchiveTask } = useStore();
+    const { deleteTask, toggleArchiveTask, toggleTaskInterest, currentUser } = useStore();
     const {
         attributes,
         listeners,
@@ -51,7 +39,9 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
         return { label: t('low'), bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-400' };
     };
 
-    const priority = getPriorityDetails(task.urgency);
+    const effectiveUrgency = task.admin_override_urgency ?? ((task.admin_override_priority || 0) > 0 ? Math.max(task.urgency, 80) : task.urgency);
+    const priority = getPriorityDetails(effectiveUrgency);
+    const hasAdminOverride = (task.admin_override_priority || 0) > 0 || task.admin_override_urgency !== null && task.admin_override_urgency !== undefined;
 
     // Format Date
     const formatDate = (dateUnparsed?: string) => {
@@ -59,9 +49,27 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
         try {
             const date = new Date(dateUnparsed);
             return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
-        } catch (e) {
+        } catch {
             return dateUnparsed;
         }
+    };
+
+    // Deduplicate Tags
+    const tags = task.skills ? Array.from(new Set(task.skills.split(',').map(s => s.trim()).filter(Boolean))) : [];
+
+    // Interest Check
+    const interestedIds = task.interested_users ? task.interested_users.split(',').filter(Boolean) : [];
+    const isInterested = currentUser && interestedIds.includes(currentUser.id);
+
+    // Interest Text (Mock for names since we only have IDs mostly, ideally mapped to users if we had them loaded, 
+    // for now we can show "X people interested" or "You + X others")
+    const getInterestText = () => {
+        if (interestedIds.length === 0) return null;
+        if (isInterested) {
+            if (interestedIds.length === 1) return t('interest_you_only') || 'You are interested';
+            return `${t('interest_you') || 'You'} + ${interestedIds.length - 1} ${t('interest_others') || 'others'}`;
+        }
+        return `${interestedIds.length} ${t('interest_people') || 'people interested'}`;
     };
 
     return (
@@ -71,7 +79,7 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
             {...attributes}
             {...listeners}
             onClick={onEdit}
-            className="group relative mb-4 rounded-xl bg-card text-card-foreground shadow-sm border border-border/50 hover:shadow-md hover:border-primary/50 transition-all duration-300 cursor-grab active:cursor-grabbing p-5 flex flex-col gap-3"
+            className="group relative mb-4 w-full max-w-full overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm border border-border/50 hover:shadow-md hover:border-primary/50 transition-all duration-300 cursor-grab active:cursor-grabbing px-4 pt-4 pb-0 flex flex-col gap-0.5"
         >
             {/* Header: Priority and Trend */}
             <div className="flex justify-between items-start">
@@ -79,6 +87,11 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                     <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${priority.bg} ${priority.text} border border-current/10`}>
                         {priority.label}
                     </span>
+                    {hasAdminOverride && (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            ADMIN OVERRIDE
+                        </span>
+                    )}
                     {!!task.weather_sensitive && (
                         <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800" title={t('weather_sensitive')}>
                             🌦️
@@ -93,7 +106,7 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                     {task.title}
                 </h3>
                 {task.description && (
-                    <p className="text-sm text-muted-foreground line-clamp-2">
+                    <p className="text-sm text-muted-foreground line-clamp-2 break-words">
                         {task.description}
                     </p>
                 )}
@@ -103,26 +116,88 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
             <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent w-full my-1" />
 
             {/* Footer: Date, Tags */}
-            <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-                    <div className="flex items-start gap-2">
-                        <span className="opacity-70 mt-1">📅</span>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] uppercase font-bold text-muted-foreground/70 leading-tight">{t('due_date_label')}</span>
-                            <span className="font-medium leading-tight">{formatDate(task.due_date)}</span>
+            <div className="flex flex-col gap-0.5">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground font-medium min-w-0">
+                    <div className="flex items-start gap-2 min-w-0 flex-wrap">
+                        <div className="flex items-start gap-2">
+                            <span className="opacity-70 mt-1">📅</span>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] uppercase font-bold text-muted-foreground/70 leading-tight">{t('due_date_label')}</span>
+                                <span className="font-medium leading-tight">{formatDate(task.due_date)}</span>
+                            </div>
                         </div>
+                        {task.project_duration && (
+                            <div className="flex items-start gap-2">
+                                <span className="opacity-70 mt-1">⏳</span>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] uppercase font-bold text-muted-foreground/70 leading-tight">Duration</span>
+                                    <span className="font-medium leading-tight">{task.project_duration}</span>
+                                </div>
+                            </div>
+                        )}
+                        {task.project_location && (
+                            <div className="flex items-start gap-2">
+                                <span className="opacity-70 mt-1">
+                                    {task.weather_code !== undefined && task.weather_code !== null
+                                        ? getWeatherIcon(task.weather_code)
+                                        : '📍'
+                                    }
+                                </span>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] uppercase font-bold text-muted-foreground/70 leading-tight">Location</span>
+                                    <span className="font-medium leading-tight flex items-center gap-1">
+                                        {task.project_location}
+                                        {task.weather_code !== undefined && task.weather_code !== null && (
+                                            <span>{getWeatherIcon(task.weather_code)}</span>
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                    {task.skills?.split(',').map(s => s.trim()).filter(Boolean).map((tag, i) => (
-                        <span key={i} className="text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-1 rounded flex items-center gap-1">
-                            <Tag className="w-3 h-3" />
-                            {tag}
-                        </span>
-                    ))}
+                {/* Bottom Row: Tags + Actions */}
+                <div className="flex flex-wrap items-end justify-between gap-1 pb-1">
+                    <div className="flex flex-wrap gap-1.5">
+                        {tags.length > 0 ? (
+                            tags.map((tag, i) => (
+                                <span key={i} className="text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 px-2 py-1 rounded flex items-center gap-1">
+                                    <Tag className="w-3 h-3" />
+                                    {tag}
+                                </span>
+                            ))
+                        ) : (
+                            <span className="text-[10px] text-muted-foreground italic">No tags</span>
+                        )}
+                    </div>
 
-                    <div className="ml-auto flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 ml-auto">
+
+                        {/* Interest Button (New) */}
+                        <div className="flex items-center gap-1 mr-2">
+                            {interestedIds.length > 0 && (
+                                <span className="text-[10px] text-muted-foreground font-medium hidden sm:inline-block">
+                                    {getInterestText()}
+                                </span>
+                            )}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleTaskInterest(task.id);
+                                }}
+                                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-all font-bold ${isInterested
+                                    ? 'bg-pink-50 text-pink-600 border-pink-200 hover:bg-pink-100'
+                                    : 'bg-transparent text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                                    }`}
+                                title={isInterested ? "Not interested" : "I'm Interested"}
+                            >
+                                <span className={isInterested ? 'scale-110' : 'grayscale opacity-50'}>❤️</span>
+                                {isInterested ? 'Interested' : 'Interest'}
+                            </button>
+                        </div>
+
+
                         {/* Quick Move (Mini) */}
                         {showQuickAction && onQuickMove && !task.archived && (
                             <button
