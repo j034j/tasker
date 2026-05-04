@@ -5,6 +5,7 @@ import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { TaskCard } from './TaskCard';
 import { type Task, useStore } from '@/lib/store';
 import { TaskModal } from './TaskModal';
+import { TaskChainGraph } from './TaskChainGraph';
 import { calculateTaskScore } from '@/lib/rankingEngine';
 import { Tag, Archive } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -24,9 +25,11 @@ function DroppableColumn({ column, children }: { column: { id: string; title: st
 interface KanbanBoardProps {
     sortByUrgency: boolean;
     setSortByUrgency: Dispatch<SetStateAction<boolean>>;
+    focusedTaskId?: string | null;
+    onFocusedTaskHandled?: () => void;
 }
 
-export function KanbanBoard({ sortByUrgency, setSortByUrgency }: KanbanBoardProps) {
+export function KanbanBoard({ sortByUrgency, setSortByUrgency, focusedTaskId = null, onFocusedTaskHandled }: KanbanBoardProps) {
     const { board, moveTask, fetchBoard, rankingWeights, showArchived, setShowArchived, updateBoard, currentUser } = useStore();
     const { t } = useLanguage();
     const [activeId, setActiveId] = useState<string | null>(null);
@@ -35,6 +38,8 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency }: KanbanBoardProp
     // Board Renaming State
     const [isEditingTitle, setIsEditingTitle] = useState(false);
     const [titleInput, setTitleInput] = useState('');
+    const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+    const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
 
     // Unified Modal State
     const [modalState, setModalState] = useState<{
@@ -60,10 +65,45 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency }: KanbanBoardProp
     );
 
     useEffect(() => {
-        if (board && modalState.isOpen) {
-            console.log('TaskModal opened:', { mode: modalState.mode, columnId: modalState.columnId ?? null, taskId: modalState.task?.id ?? null });
+        if (board) {
+            setSelectedDepartment(board.department_id || null);
+            (async () => {
+                try {
+                    const orgId = board.org_id as string;
+                    const { data } = await (await import('@/lib/axios')).api.get(`/orgs/${orgId}/departments`);
+                    setDepartments(Array.isArray(data?.departments) ? data.departments : []);
+                } catch (err) {
+                    console.error('Failed to load departments', err);
+                }
+            })();
         }
     }, [board, modalState.isOpen, modalState.mode, modalState.columnId, modalState.task?.id]);
+
+    useEffect(() => {
+        if (!board || !focusedTaskId) return;
+
+        // Auto-open the modal if the task exists
+        const taskToFocus = board.columns.flatMap(c => c.tasks).find(t => t.id === focusedTaskId);
+        if (taskToFocus) {
+            setModalState({ isOpen: true, mode: 'edit', task: taskToFocus });
+        }
+
+        const scrollTimeout = window.setTimeout(() => {
+            const target = document.querySelector<HTMLElement>(`[data-task-id="${focusedTaskId}"]`);
+            if (target) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 180);
+
+        const clearTimeoutId = window.setTimeout(() => {
+            onFocusedTaskHandled?.();
+        }, 2600);
+
+        return () => {
+            window.clearTimeout(scrollTimeout);
+            window.clearTimeout(clearTimeoutId);
+        };
+    }, [board, focusedTaskId, onFocusedTaskHandled]);
 
     if (!board) return <div className="p-8 text-center">Loading Board...</div>;
 
@@ -208,6 +248,25 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency }: KanbanBoardProp
                                 <span>•</span>
                                 <span>{board.followers ? board.followers.split(',').filter(Boolean).length : 0} Members</span>
                             </div>
+                            {/* Department selector */}
+                            <div className="ml-4">
+                                <select value={selectedDepartment ?? ''} onChange={async (e) => {
+                                    const val = e.target.value || null;
+                                    setSelectedDepartment(val);
+                                    if (!board) return;
+                                    try {
+                                        await updateBoard(board.id, { departmentId: val });
+                                        // refresh board
+                                        fetchBoard(board.id);
+                                    } catch (err) {
+                                        console.error('Failed to update department', err);
+                                        alert('Failed to update department');
+                                    }
+                                }} className="text-sm rounded px-2 py-1 border bg-white dark:bg-zinc-800">
+                                    <option value="">No department</option>
+                                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                </select>
+                            </div>
                         </div>
                         {tagFilter && (
                             <div className="flex items-center gap-2 ml-auto animate-in fade-in slide-in-from-left-4 duration-300">
@@ -223,6 +282,14 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency }: KanbanBoardProp
                             </div>
                         )}
                     </div>
+                    {/* Daisy Chain Graph Section */}
+                    {(focusedTaskId || tagFilter) && (
+                        <div className="px-6">
+                            <TaskChainGraph 
+                                taskId={focusedTaskId || (tagFilter ? board.columns.flatMap(c => c.tasks).find(t => t.skills?.includes(tagFilter))?.id : null) || ''} 
+                            />
+                        </div>
+                    )}
 
                     <div className="px-4 pt-2">
                         <div className="flex justify-end gap-2 pr-8 md:pr-10">
@@ -301,6 +368,7 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency }: KanbanBoardProp
                                                     <TaskCard
                                                         key={task.id}
                                                         task={task}
+                                                        isHighlighted={task.id === focusedTaskId}
                                                         onEdit={() => handleEditTask(task)}
                                                         onQuickMove={targetColumn ? (taskId) => handleQuickMove(taskId, targetColumn.id) : undefined}
                                                         showQuickAction={quickAction.show && !!targetColumn}

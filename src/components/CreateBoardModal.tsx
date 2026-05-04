@@ -1,8 +1,9 @@
 
-import { useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Button } from './ui/Button';
 import { useStore } from '@/lib/store';
-import { Lock, Globe, LayoutDashboard, CheckCircle2, Sparkles } from 'lucide-react';
+import { api } from '@/lib/axios';
+import { Lock, Globe, CheckCircle2, Sparkles } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 import { DraggableModalWrapper } from './ui/DraggableModalWrapper';
@@ -15,9 +16,47 @@ interface CreateBoardModalProps {
 export function CreateBoardModal({ isOpen, onClose }: CreateBoardModalProps) {
     const { createBoard, orgId } = useStore();
     const { t } = useLanguage();
+    const departmentListId = useId();
     const [name, setName] = useState('');
     const [isPublic, setIsPublic] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+    const [departmentName, setDepartmentName] = useState('');
+
+    const resetForm = () => {
+        setName('');
+        setIsPublic(false);
+        setDepartmentName('');
+    };
+
+    const loadDepartments = async (nextOrgId: string) => {
+        try {
+            const { data } = await api.get(`/orgs/${nextOrgId}/departments`);
+            setDepartments(Array.isArray(data?.departments) ? data.departments : []);
+        } catch (err) {
+            console.error('Failed to load departments', err);
+        }
+    };
+
+    const resolveDepartmentId = async () => {
+        const trimmedDepartmentName = departmentName.trim();
+        if (!trimmedDepartmentName || !orgId) {
+            return null;
+        }
+
+        const existingDepartment = departments.find((department) => department.name.trim().toLowerCase() === trimmedDepartmentName.toLowerCase());
+        if (existingDepartment) {
+            return existingDepartment.id;
+        }
+
+        const { data } = await api.post(`/orgs/${orgId}/departments`, { name: trimmedDepartmentName });
+        const createdDepartment = {
+            id: String(data?.id),
+            name: typeof data?.name === 'string' ? data.name : trimmedDepartmentName
+        };
+        setDepartments((currentDepartments) => [...currentDepartments, createdDepartment]);
+        return createdDepartment.id;
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -25,16 +64,25 @@ export function CreateBoardModal({ isOpen, onClose }: CreateBoardModalProps) {
 
         setLoading(true);
         try {
-            await createBoard(name.trim(), orgId, isPublic);
+            const departmentId = await resolveDepartmentId();
+            await createBoard(name.trim(), orgId, isPublic, departmentId);
             onClose();
-            setName('');
-            setIsPublic(false);
+            resetForm();
         } catch (error) {
             console.error(error);
         } finally {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!isOpen) {
+            resetForm();
+            return;
+        }
+        if (!orgId) return;
+        loadDepartments(orgId).catch(console.error);
+    }, [isOpen, orgId]);
 
     return (
         <DraggableModalWrapper isOpen={isOpen} onClose={onClose} className="w-[92vw] max-w-md overflow-hidden bg-white dark:bg-zinc-900 border-0 shadow-2xl rounded-2xl">
@@ -59,14 +107,11 @@ export function CreateBoardModal({ isOpen, onClose }: CreateBoardModalProps) {
                             {t('board_name_label')}
                         </label>
                         <div className="relative group">
-                            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                                <LayoutDashboard className="w-5 h-5 text-zinc-400 group-focus-within:text-indigo-500 transition-colors" />
-                            </div>
                             <input
                                 type="text"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
-                                className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 focus:outline-none focus:border-indigo-500 focus:bg-white dark:focus:bg-zinc-900 transition-all font-semibold text-zinc-900 dark:text-zinc-100 shadow-sm"
+                                className="w-full px-4 py-3 rounded-xl border-2 border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 focus:outline-none focus:border-indigo-500 focus:bg-white dark:focus:bg-zinc-900 transition-all font-semibold text-zinc-900 dark:text-zinc-100 shadow-sm"
                                 placeholder={t('board_name_placeholder')}
                                 autoFocus
                             />
@@ -113,6 +158,27 @@ export function CreateBoardModal({ isOpen, onClose }: CreateBoardModalProps) {
                                 <div className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed pr-4">{t('vis_public_desc')}</div>
                             </button>
                         </div>
+                    </div>
+
+                    {/* Department Selector */}
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 ml-1">Department (optional)</label>
+                        <input
+                            type="text"
+                            list={departmentListId}
+                            value={departmentName}
+                            onChange={(e) => setDepartmentName(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl border-2 border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 focus:outline-none focus:border-indigo-500 transition-all text-zinc-900 dark:text-zinc-100"
+                            placeholder="Type a department or choose an existing one"
+                        />
+                        <datalist id={departmentListId}>
+                            {departments.map((department) => (
+                                <option key={department.id} value={department.name} />
+                            ))}
+                        </datalist>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 ml-1">
+                            Enter a new department name here, or pick one already in this workspace.
+                        </p>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800">

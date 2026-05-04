@@ -5,6 +5,7 @@ export const registerSchema = z.object({
     email: z.string().email('Invalid email'),
     password: z.string().min(6, 'Password must be at least 6 characters').max(100),
     orgName: z.string().min(1, 'Organization name is required').max(100).optional(),
+    username: z.string().min(1, 'Username is required').max(50).optional(),
 });
 
 export const loginSchema = z.object({
@@ -67,6 +68,7 @@ export const createOrgSchema = z.object({
 export const orgRegistrationSchema = z.object({
     orgName: z.string().min(1, 'Organization name is required').max(100),
     userName: z.string().min(1, 'Your name is required').max(100),
+    name: z.string().min(1).max(100).optional(), // Support both formats
     username: z.string().min(1, 'Username is required').max(50),
     email: z.string().email('Invalid email'),
     password: z.string().min(6, 'Password must be at least 6 characters').max(100),
@@ -78,6 +80,16 @@ export const orgRegistrationSchema = z.object({
 
 export const passwordResetRequestSchema = z.object({
     email: z.string().email('Invalid email'),
+});
+
+export const createDepartmentSchema = z.object({
+    name: z.string().min(1, 'Department name is required').max(100),
+    adminUserId: z.string().uuid('Invalid admin user ID').optional().nullable(),
+});
+
+export const updateDepartmentSchema = z.object({
+    name: z.string().min(1).max(100).optional(),
+    adminUserId: z.string().uuid().optional().nullable(),
 });
 
 export const passwordResetSchema = z.object({

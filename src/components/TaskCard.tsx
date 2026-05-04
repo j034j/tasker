@@ -1,19 +1,20 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Tag, Archive, RotateCcw, X } from 'lucide-react';
+import { Tag, Archive, RotateCcw, X, AlertCircle } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getWeatherIcon } from '@/lib/weatherService';
 import { useStore, type Task } from '@/lib/store';
 
 interface TaskCardProps {
     task: Task;
+    isHighlighted?: boolean;
     onEdit?: () => void;
     onQuickMove?: (taskId: string) => void;
     showQuickAction?: boolean;
     quickActionLabel?: string;
 }
 
-export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActionLabel }: TaskCardProps) {
+export function TaskCard({ task, isHighlighted = false, onEdit, onQuickMove, showQuickAction, quickActionLabel }: TaskCardProps) {
     const { t } = useLanguage();
     const { deleteTask, toggleArchiveTask, toggleTaskInterest, currentUser } = useStore();
     const {
@@ -61,8 +62,6 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
     const interestedIds = task.interested_users ? task.interested_users.split(',').filter(Boolean) : [];
     const isInterested = currentUser && interestedIds.includes(currentUser.id);
 
-    // Interest Text (Mock for names since we only have IDs mostly, ideally mapped to users if we had them loaded, 
-    // for now we can show "X people interested" or "You + X others")
     const getInterestText = () => {
         if (interestedIds.length === 0) return null;
         if (isInterested) {
@@ -75,11 +74,15 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
     return (
         <div
             ref={setNodeRef}
+            data-task-id={task.id}
             style={style}
             {...attributes}
             {...listeners}
             onClick={onEdit}
-            className="group relative mb-4 w-full max-w-full overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm border border-border/50 hover:shadow-md hover:border-primary/50 transition-all duration-300 cursor-grab active:cursor-grabbing px-4 pt-4 pb-0 flex flex-col gap-0.5"
+            className={`group relative mb-4 w-full max-w-full overflow-hidden rounded-xl bg-card text-card-foreground shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing px-4 pt-4 pb-0 flex flex-col gap-0.5 ${isHighlighted
+                ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-lg shadow-indigo-200/60 dark:ring-indigo-900/60'
+                : 'border-border/50 hover:shadow-md hover:border-primary/50'
+                }`}
         >
             {/* Header: Priority and Trend */}
             <div className="flex justify-between items-start">
@@ -95,6 +98,14 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                     {!!task.weather_sensitive && (
                         <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800" title={t('weather_sensitive')}>
                             🌦️
+                        </span>
+                    )}
+                    {task.blocked_by && task.blocked_by.length > 0 && (
+                        <span 
+                            className="text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1"
+                            title={`Blocked by: ${task.blocked_by.map(b => b.title).join(', ')}`}
+                        >
+                            <AlertCircle className="w-3 h-3" /> BLOCKED
                         </span>
                     )}
                 </div>
@@ -173,8 +184,6 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                     </div>
 
                     <div className="flex items-center gap-1.5 ml-auto">
-
-                        {/* Interest Button (New) */}
                         <div className="flex items-center gap-1 mr-2">
                             {interestedIds.length > 0 && (
                                 <span className="text-[10px] text-muted-foreground font-medium hidden sm:inline-block">
@@ -197,8 +206,6 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                             </button>
                         </div>
 
-
-                        {/* Quick Move (Mini) */}
                         {showQuickAction && onQuickMove && !task.archived && (
                             <button
                                 onClick={(e) => {
@@ -212,7 +219,6 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                             </button>
                         )}
 
-                        {/* Archive / Restore */}
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -227,7 +233,6 @@ export function TaskCard({ task, onEdit, onQuickMove, showQuickAction, quickActi
                             {task.archived ? <RotateCcw className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
                         </button>
 
-                        {/* Delete - RED X */}
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();

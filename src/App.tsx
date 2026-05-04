@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useState, useEffect, useRef, useMemo } from 'react';
 import { KanbanBoard } from './components/KanbanBoard';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/Button';
@@ -7,8 +7,10 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { AuthScreen } from './components/AuthScreen';
 import { DiscoveryModal } from './components/DiscoveryModal';
 import { CreateBoardModal } from './components/CreateBoardModal';
+import TaskActivitySnapshot from './components/TaskActivitySnapshot';
 import { ToastContainer } from './components/Toast';
-import { Plus, Trash2, LogOut, Archive, UserMinus, Globe, Search, User as UserIcon, ChartColumnIncreasing, CalendarDays, LayoutGrid, ShieldCheck, House } from 'lucide-react';
+import CentralView from './components/CentralView';
+import { Plus, Trash2, LogOut, Archive, UserMinus, Search, User as UserIcon, ChartColumnIncreasing, CalendarDays, LayoutGrid, ShieldCheck, House } from 'lucide-react';
 import { NotificationPopover } from './components/NotificationPopover';
 import { SuperAdminRegister } from './components/SuperAdminRegister';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
@@ -91,11 +93,16 @@ function DashboardShell() {
   const { language, setLanguage, t } = useLanguage();
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
   const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
+  const [isCentralOpen, setIsCentralOpen] = useState(false);
   const [discoveryTab, setDiscoveryTab] = useState<'boards' | 'orgs'>('boards');
   const [view, setView] = useState<'board' | 'profile' | 'reporting' | 'weekly' | 'boards-overview' | 'org-admin-access'>('board');
   const [sortByUrgency, setSortByUrgency] = useState(true);
   const [weekStart, setWeekStart] = useState(getCurrentWeekStart());
   const [selectedBoardWeekKey, setSelectedBoardWeekKey] = useState(getWeekKey(new Date()));
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const [showSnapshot, setShowSnapshot] = useState(true);
+  // Guard ref: prevents the week-change board-swap effect from overriding snapshot-driven navigations
+  const isNavigatingFromSnapshot = useRef(false);
   const canAccessOrgAdminWorkflow = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
   const recentWeekOptions = useMemo(() => getRecentWeekOptions(), []);
 
@@ -107,8 +114,25 @@ function DashboardShell() {
   );
   const selectableBoards = useMemo(() => {
     const weekScopedBoards = myBoards.filter((entry) => getWeekKey(parseBoardDate(entry.created_at)) === selectedBoardWeekKey);
-    return weekScopedBoards.length > 0 ? weekScopedBoards : myBoards;
-  }, [myBoards, selectedBoardWeekKey]);
+    const baseBoards = weekScopedBoards.length > 0 ? weekScopedBoards : myBoards;
+    if (!board || baseBoards.some((entry) => entry.id === board.id)) {
+      return baseBoards;
+    }
+
+    return [
+      {
+        id: board.id,
+        name: board.name,
+        created_at: board.created_at,
+        org_id: board.org_id,
+        department_id: board.department_id,
+        followers: board.followers,
+        created_by: board.created_by,
+        is_public: board.is_public ? 1 : 0
+      },
+      ...baseBoards
+    ];
+  }, [board, myBoards, selectedBoardWeekKey]);
   const boardIndex = useMemo(
     () => (board ? selectableBoards.findIndex((entry) => entry.id === board.id) + 1 : 0),
     [board, selectableBoards]
@@ -211,23 +235,21 @@ function DashboardShell() {
 
     if (selectableBoards.length > 0) {
       const lastBoardId = localStorage.getItem('tasker_last_board_id');
-      console.log('Auto-load logic running:', {
-        lastBoardId,
-        myBoardsCount: selectableBoards.length,
-        myBoardsIds: selectableBoards.map(b => b.id),
-        currentUserId: currentUser?.id
-      });
-
       const targetBoard = selectableBoards.find(b => b.id === lastBoardId) || selectableBoards[0];
       if (targetBoard) {
-        console.log('Fetching target board:', targetBoard.name);
         fetchBoard(targetBoard.id);
       }
     }
   }, [board, currentUser?.id, fetchBoard, selectableBoards]);
 
+  // When the user changes the week filter, switch to first visible board —
+  // but NOT when a snapshot navigation just set the week key (guarded by ref).
   useEffect(() => {
     if (!board || selectableBoards.length === 0) return;
+    if (isNavigatingFromSnapshot.current) {
+      isNavigatingFromSnapshot.current = false;
+      return;
+    }
     const existsInCurrentWeek = selectableBoards.some((entry) => entry.id === board.id);
     if (!existsInCurrentWeek) {
       fetchBoard(selectableBoards[0].id);
@@ -237,6 +259,17 @@ function DashboardShell() {
   const handleCreateBoard = () => {
     if (!orgId) return;
     setIsCreateBoardOpen(true);
+  };
+
+  const handleSnapshotTaskSelect = ({ boardId, taskId, boardCreatedAt }: { boardId: string; taskId: string; boardCreatedAt?: string }) => {
+    setView('board');
+    if (boardCreatedAt) {
+      // Mark navigation so the week-change effect doesn't override the target board
+      isNavigatingFromSnapshot.current = true;
+      setSelectedBoardWeekKey(getWeekKey(parseBoardDate(boardCreatedAt)));
+    }
+    setFocusedTaskId(taskId);
+    fetchBoard(boardId).catch(console.error);
   };
 
   const handleDeleteBoard = async () => {
@@ -261,6 +294,12 @@ function DashboardShell() {
       }
     }
   };
+
+  const snapshotRefreshKey = useMemo(() => {
+    // Refresh when board changes, task count changes, or week changes
+    const taskCount = board?.columns.reduce((acc, col) => acc + col.tasks.length, 0) || 0;
+    return `${board?.id || 'none'}-${taskCount}-${selectedBoardWeekKey}`;
+  }, [board, selectedBoardWeekKey]);
 
   const currentOrgName = userProfile?.organization?.name || orgName || 'your organization';
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
@@ -300,6 +339,10 @@ function DashboardShell() {
               </svg>
             </button>
           </div>
+          {/* Central view button */}
+          <div className="hidden md:flex items-center ml-4">
+            <Button onClick={() => setIsCentralOpen(true)} size="sm" variant="outline" className="mr-2">Central View</Button>
+          </div>
 
           {/* Org Badge */}
           {currentOrgName && (
@@ -311,10 +354,19 @@ function DashboardShell() {
                 onClick={() => { setDiscoveryTab('orgs'); setIsDiscoveryOpen(true); }}
                 size="sm"
                 variant="ghost"
-                className="h-6 w-6 p-0 rounded-full"
-                title="Switch Organization"
+                className="h-7 w-7 p-0 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                title="Discover Boards"
               >
-                <Globe className="w-3.5 h-3.5 text-zinc-400 hover:text-indigo-500" />
+                <Search className="w-4 h-4 text-zinc-500" />
+              </Button>
+              <Button
+                onClick={() => setShowSnapshot(!showSnapshot)}
+                size="sm"
+                variant="ghost"
+                className={`h-7 w-7 p-0 rounded-lg ${showSnapshot ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500'}`}
+                title={showSnapshot ? "Hide Snapshot" : "Show Snapshot"}
+              >
+                <LayoutGrid className="w-4 h-4" />
               </Button>
             </div>
           )}
@@ -477,8 +529,22 @@ function DashboardShell() {
           ) : view === 'org-admin-access' ? (
             <OrgSuperAdminAccessPage weekStart={weekStart} />
           ) : board ? (
-            <div className="flex-1 min-w-0 px-2 pb-3 md:px-3 xl:pr-0">
-              <KanbanBoard sortByUrgency={sortByUrgency} setSortByUrgency={setSortByUrgency} />
+            <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-zinc-950 overflow-hidden relative">
+              {showSnapshot && orgId && (
+                <div className="border-b border-zinc-200/50 dark:border-zinc-800/50 bg-zinc-50/30 dark:bg-zinc-900/10">
+                  <TaskActivitySnapshot
+                    orgId={orgId}
+                    refreshKey={snapshotRefreshKey}
+                    onSelectTask={handleSnapshotTaskSelect}
+                  />
+                </div>
+              )}
+              <KanbanBoard
+                sortByUrgency={sortByUrgency}
+                setSortByUrgency={setSortByUrgency}
+                focusedTaskId={focusedTaskId}
+                onFocusedTaskHandled={() => setFocusedTaskId(null)}
+              />
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-4">
@@ -511,6 +577,9 @@ function DashboardShell() {
         isOpen={isCreateBoardOpen}
         onClose={() => setIsCreateBoardOpen(false)}
       />
+      {isCentralOpen && orgId && (
+        <CentralView orgId={orgId} onClose={() => setIsCentralOpen(false)} />
+      )}
     </div>
   );
 }

@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Tag } from 'lucide-react';
 import { api } from '@/lib/axios';
 import { useStore } from '@/lib/store';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { DraggableModalWrapper } from './ui/DraggableModalWrapper';
+import { TaskDependencyModal } from './TaskDependencyModal';
+import { getCoordinates, fetchWeather, getWeatherImpact } from '@/lib/weatherService';
 
 interface Task {
     id: string;
@@ -44,7 +46,7 @@ interface TaskOverrideHistoryEntry {
 }
 
 export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
-    const { weatherImpact, fetchWeatherImpact, currentSeason, currentUser } = useStore();
+    const { currentSeason, currentUser } = useStore();
     const { t } = useLanguage();
 
     // Form State
@@ -59,6 +61,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
     const [season, setSeason] = useState(task?.season || '');
     const [projectDuration, setProjectDuration] = useState(task?.project_duration || '');
     const [projectLocation, setProjectLocation] = useState(task?.project_location || '');
+    const [globalWeatherImpact, setGlobalWeatherImpact] = useState(0);
     const [localWeatherImpact, setLocalWeatherImpact] = useState<number | null>(null);
     const [weatherCode, setWeatherCode] = useState<number | undefined>(task?.weather_code);
     const [adminOverrideUrgency, setAdminOverrideUrgency] = useState<number | null>(
@@ -70,34 +73,50 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
     const [overrideHistoryError, setOverrideHistoryError] = useState<string | null>(null);
 
     const [saving, setSaving] = useState(false);
+    const [dependencyModalOpen, setDependencyModalOpen] = useState(false);
 
-    const loadWeatherForLocation = useCallback(async (location: string) => {
-        if (!location) return;
-        const { getCoordinates, fetchWeather, getWeatherImpact } = await import('@/lib/weatherService');
-        const coords = await getCoordinates(location);
-        if (coords) {
-            const weather = await fetchWeather(coords.latitude, coords.longitude);
-            const impact = getWeatherImpact(weather);
-            setLocalWeatherImpact(impact);
-            setWeatherCode(weather.conditionCode);
-            if (weather.season) setSeason(weather.season);
+    const fetchGlobalWeatherImpact = async () => {
+        try {
+            const coords = await getCoordinates('Berlin'); // Default fallback for global
+            if (coords) {
+                const weather = await fetchWeather(coords.latitude, coords.longitude);
+                setGlobalWeatherImpact(getWeatherImpact(weather));
+            }
+        } catch (e) {
+            console.error('Failed to fetch global weather impact', e);
         }
-    }, []);
+    };
 
-    const handleLocationBlur = useCallback(async () => {
-        if (!projectLocation) return;
-        await loadWeatherForLocation(projectLocation);
-    }, [loadWeatherForLocation, projectLocation]);
-
-    useEffect(() => {
-        const initialLocation = task?.project_location?.trim() || '';
-        if (!initialLocation) {
-            fetchWeatherImpact();
+    const handleLocationBlur = async () => {
+        if (!projectLocation) {
+            setLocalWeatherImpact(null);
+            setWeatherCode(undefined);
             return;
         }
 
-        void loadWeatherForLocation(initialLocation);
-    }, [fetchWeatherImpact, loadWeatherForLocation, task?.id, task?.project_location]);
+        try {
+            const coords = await getCoordinates(projectLocation);
+            if (coords) {
+                const weather = await fetchWeather(coords.latitude, coords.longitude);
+                const impact = getWeatherImpact(weather);
+                setLocalWeatherImpact(impact);
+                setWeatherCode(weather.conditionCode);
+                if (weather.season) setSeason(weather.season);
+            }
+        } catch (e) {
+            console.error('Failed to get local weather', e);
+        }
+    };
+
+    useEffect(() => {
+        // Fetch global weather impact when modal opens if no location set
+        if (!projectLocation) {
+            fetchGlobalWeatherImpact();
+        } else {
+            // Trigger local check if location exists
+            handleLocationBlur();
+        }
+    }, []);
 
     useEffect(() => {
         if (!task?.id || !canOverrideRanking) return;
@@ -131,7 +150,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                 peopleRequired,
                 skills,
                 weatherSensitive,
-                weatherImpact: localWeatherImpact !== null ? localWeatherImpact : weatherImpact,
+                weatherImpact: localWeatherImpact !== null ? localWeatherImpact : globalWeatherImpact,
                 projectSeason: (season && ['Winter', 'Spring', 'Summer', 'Autumn'].includes(season) ? season : undefined) as 'Winter' | 'Spring' | 'Summer' | 'Autumn' | undefined,
                 currentSeason
             });
@@ -139,7 +158,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
             setUrgency(score);
         };
         runCalculation();
-    }, [title, description, dueDate, fundingNeeded, peopleRequired, weatherSensitive, weatherImpact, localWeatherImpact, skills, season, currentSeason]);
+    }, [title, description, dueDate, fundingNeeded, peopleRequired, weatherSensitive, globalWeatherImpact, localWeatherImpact, skills, season, currentSeason]);
 
     const handleAutoTag = async () => {
         const { generateTags } = await import('@/lib/autoTag');
@@ -209,10 +228,12 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
         if (urgency >= 50) return 'from-orange-500 to-yellow-500';
         return 'from-blue-500 to-cyan-500';
     };
+    const effectiveWeatherImpact = localWeatherImpact !== null ? localWeatherImpact : globalWeatherImpact;
 
     return (
-        <DraggableModalWrapper isOpen={true} onClose={onClose} className="w-full max-w-[590px] sm:max-w-[590px] min-h-[60vh] max-h-[90vh] flex flex-col">
-            <div className="relative shrink-0">
+        <DraggableModalWrapper isOpen={true} onClose={onClose} className="w-full max-w-md sm:max-w-lg max-h-[calc(100dvh-2rem)] bg-white dark:bg-zinc-900">
+            <div className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col">
+                <div className="relative">
                 {/* Header with gradient bar */}
                 <div className={`h-1.5 rounded-t-2xl bg-gradient-to-r ${getUrgencyColor(urgency)}`} />
 
@@ -236,7 +257,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
             </div>
 
             {/* Form content */}
-            <div className="px-6 py-5 space-y-5 flex-1 overflow-y-auto bg-white dark:bg-zinc-900 min-h-0">
+            <div className="min-h-0 flex-1 overflow-y-auto bg-white px-6 py-5 dark:bg-zinc-900">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
                         <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-2 uppercase tracking-wide">
@@ -292,7 +313,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                                 className="text-xs font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 flex items-center gap-1 transition-colors"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 8 5-5 5 5" /><path d="m12 13 5 5 5-5" /><path d="M2 12h20" /><path d="M2 19h20" /></svg>
-                                {t('translate_btn')}
+                                {(t as (key: string) => string)('translate_btn')}
                             </button>
                         </div>
                     </div>
@@ -474,9 +495,9 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                                 <label htmlFor="weatherSensitive" className="text-sm font-bold text-zinc-700 dark:text-zinc-300 cursor-pointer block">
                                     🌦️ {t('weather_sensitive_label')}
                                 </label>
-                                {weatherSensitive && weatherImpact > 0 && (
+                                {weatherSensitive && effectiveWeatherImpact > 0 && (
                                     <span className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded-full font-bold">
-                                        +{(localWeatherImpact !== null ? localWeatherImpact : weatherImpact)} {t('weather_impact_msg')}
+                                        +{effectiveWeatherImpact} {t('weather_impact_msg')}
                                     </span>
                                 )}
                             </div>
@@ -529,8 +550,16 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
             </div>
 
             {/* Footer with actions */}
-            <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 rounded-b-2xl shrink-0">
+            <div className="shrink-0 rounded-b-2xl border-t border-zinc-200 bg-zinc-50 px-6 py-4 dark:border-zinc-700 dark:bg-zinc-800">
                 <div className="flex gap-3">
+                    {task && (
+                        <button
+                            onClick={() => setDependencyModalOpen(true)}
+                            className="px-4 py-2.5 rounded-lg font-bold text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border-2 border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-all"
+                        >
+                            🔗 Dependencies
+                        </button>
+                    )}
                     <button
                         onClick={onClose}
                         className="flex-1 px-4 py-2.5 rounded-lg font-bold text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border-2 border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-all"
@@ -546,6 +575,14 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                     </button>
                 </div>
             </div>
+            </div>
+            {task && (
+                <TaskDependencyModal
+                    task={{ ...task, board_id: '', board_name: '', column_id: '' }} // Simplified task object for the modal
+                    isOpen={dependencyModalOpen}
+                    onClose={() => setDependencyModalOpen(false)}
+                />
+            )}
         </DraggableModalWrapper>
     );
 }

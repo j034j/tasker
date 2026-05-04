@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useStore } from '@/lib/store';
+import { useStore, type ReportingWeeklyTask } from '@/lib/store';
+import { api } from '@/lib/axios';
 
 interface WeeklyTasksPageProps {
     weekStart: string;
@@ -18,11 +19,20 @@ const weekStartFromMonthWeek = (monthKey: string, week: number) => {
     return toDateString(new Date(Date.UTC(year, (month - 1), day)));
 };
 
+interface DepartmentOption {
+    id: string;
+    name: string;
+    admin_user_id?: string | null;
+}
+
 export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProps) {
     const { orgId, reportingOverview, fetchReportingOverview, fetchWeeklyObjective, saveWeeklyObjective, fetchWeeklyObjectiveHistory, currentUser } = useStore();
     const [statusFilter, setStatusFilter] = useState<'all' | 'not_started' | 'in_progress' | 'completed'>('all');
     const [personFilter, setPersonFilter] = useState('all');
     const [locationFilter, setLocationFilter] = useState('all');
+    const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+    const [departmentsLoaded, setDepartmentsLoaded] = useState(false);
+    const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('all');
     const [selectedMonth, setSelectedMonth] = useState(() => toMonthKey(parseIsoDate(weekStart)));
     const [selectedWeek, setSelectedWeek] = useState<number>(() => weekOfMonth(parseIsoDate(weekStart)));
     const [weeklyObjective, setWeeklyObjective] = useState('');
@@ -37,12 +47,51 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
     }[]>([]);
     const [objectiveStatus, setObjectiveStatus] = useState<string | null>(null);
     const [objectiveSaving, setObjectiveSaving] = useState(false);
-    const canEditObjective = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
+    const canViewAllDepartments = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
+    const ledDepartments = useMemo(() => (
+        departments.filter((department) => department.admin_user_id === currentUser?.id)
+    ), [currentUser?.id, departments]);
+    const accessibleDepartments = useMemo(() => (
+        canViewAllDepartments ? departments : ledDepartments
+    ), [canViewAllDepartments, departments, ledDepartments]);
+    const effectiveDepartmentId = selectedDepartmentId === 'all' ? null : selectedDepartmentId;
+    const selectedDepartment = departments.find((department) => department.id === effectiveDepartmentId);
+    const canEditObjective = canViewAllDepartments;
 
     useEffect(() => {
         if (!orgId) return;
-        fetchReportingOverview(orgId, weekStart).catch(console.error);
-    }, [orgId, weekStart, fetchReportingOverview]);
+        setDepartmentsLoaded(false);
+        api.get(`/orgs/${orgId}/departments`)
+            .then(({ data }) => setDepartments(Array.isArray(data?.departments) ? data.departments : []))
+            .catch((error) => {
+                console.error('Failed to load departments for weekly overview', error);
+                setDepartments([]);
+            })
+            .finally(() => {
+                setDepartmentsLoaded(true);
+            });
+    }, [orgId]);
+
+    useEffect(() => {
+        if (canViewAllDepartments) return;
+        if (ledDepartments.length > 0 && selectedDepartmentId === 'all') {
+            setSelectedDepartmentId(ledDepartments[0].id);
+        }
+    }, [canViewAllDepartments, ledDepartments, selectedDepartmentId]);
+
+    useEffect(() => {
+        if (!orgId) return;
+        if (!canViewAllDepartments && !departmentsLoaded) return;
+        if (!canViewAllDepartments && ledDepartments.length > 0 && selectedDepartmentId === 'all') return;
+        if (!canViewAllDepartments && ledDepartments.length === 0) return;
+        fetchReportingOverview(orgId, weekStart, effectiveDepartmentId).catch(console.error);
+    }, [canViewAllDepartments, departmentsLoaded, effectiveDepartmentId, fetchReportingOverview, ledDepartments.length, orgId, selectedDepartmentId, weekStart]);
+
+    useEffect(() => {
+        setStatusFilter('all');
+        setPersonFilter('all');
+        setLocationFilter('all');
+    }, [selectedDepartmentId]);
 
     useEffect(() => {
         const date = parseIsoDate(weekStart);
@@ -112,6 +161,14 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
     const currentWeek = weekOfMonth(today);
     const viewingCurrentCalendarWeek = currentMonth === selectedMonth && currentWeek === selectedWeek;
 
+    if (!canViewAllDepartments && departmentsLoaded && ledDepartments.length === 0) {
+        return (
+            <div className="flex-1 overflow-y-auto bg-zinc-50 p-6 text-sm text-zinc-500 dark:bg-zinc-950 dark:text-zinc-400">
+                No departmental weekly overview is assigned to your account yet.
+            </div>
+        );
+    }
+
     if (!reportingOverview) {
         return <div className="p-6 text-sm text-zinc-500">Loading weekly task overview...</div>;
     }
@@ -122,6 +179,9 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
                 <div>
                     <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-100">Weekly Task Overview</h2>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">Who is doing what and where</p>
+                    <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        {selectedDepartment ? `${selectedDepartment.name} Department` : 'Organization-wide'}
+                    </p>
                     <p className={`text-xs mt-1 font-semibold ${viewingCurrentCalendarWeek ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400'}`}>
                         Calendar says this week is {weekLabel(currentWeek)} of {currentMonth}. {viewingCurrentCalendarWeek ? 'You are viewing the current week.' : `You are viewing ${weekLabel(selectedWeek)} of ${selectedMonth}.`}
                     </p>
@@ -142,6 +202,18 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
                         <option value={2}>Week 2</option>
                         <option value={3}>Week 3</option>
                         <option value={4}>Week 4</option>
+                    </select>
+                    <select
+                        value={selectedDepartmentId}
+                        onChange={(e) => setSelectedDepartmentId(e.target.value)}
+                        className="px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900"
+                        disabled={!canViewAllDepartments && accessibleDepartments.length <= 1}
+                        title="Department weekly overview"
+                    >
+                        {canViewAllDepartments && <option value="all">All departments</option>}
+                        {accessibleDepartments.map((department) => (
+                            <option key={department.id} value={department.id}>{department.name}</option>
+                        ))}
                     </select>
                     <select
                         value={statusFilter}
@@ -215,7 +287,7 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
                     className="w-full px-3 py-2 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900"
                 />
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {canEditObjective ? 'This objective is shared across your organization for the selected week.' : 'View-only objective. Admin or Org Super Admin can edit.'}
+                    {canEditObjective ? 'This objective is shared across your organization for the selected week.' : 'View-only objective. Department heads can review their department weekly task overview.'}
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     Last updated: {objectiveUpdatedAt ? new Date(objectiveUpdatedAt).toLocaleString() : 'Never'}{objectiveUpdatedByName ? ` by ${objectiveUpdatedByName}` : ''}
@@ -240,7 +312,38 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
                 )}
             </div>
 
+            <DepartmentWeeklyTaskOverview
+                departmentName={selectedDepartment?.name || null}
+                tasks={filteredTasks}
+            />
+        </div>
+    );
+}
+
+function DepartmentWeeklyTaskOverview({
+    departmentName,
+    tasks
+}: {
+    departmentName: string | null;
+    tasks: ReportingWeeklyTask[];
+}) {
+    return (
             <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-x-auto">
+                <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+                    <div>
+                        <h3 className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                            {departmentName ? `${departmentName} Weekly Task Overview` : 'Weekly Task Overview'}
+                        </h3>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                            {departmentName
+                                ? 'Department-scoped tasks due or completed in the selected week.'
+                                : 'Tasks due or completed in the selected week.'}
+                        </p>
+                    </div>
+                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                        {tasks.length} tasks
+                    </span>
+                </div>
                 <table className="min-w-full text-sm">
                     <thead className="bg-zinc-100 dark:bg-zinc-800">
                         <tr className="text-left text-zinc-700 dark:text-zinc-200">
@@ -253,7 +356,7 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredTasks.map((task) => (
+                        {tasks.map((task) => (
                             <tr key={task.id} className="border-t border-zinc-200 dark:border-zinc-700">
                                 <td className="p-3 font-medium">{task.title}</td>
                                 <td className="p-3">{task.board_name}</td>
@@ -263,7 +366,7 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
                                 <td className="p-3">{task.due_date || '-'}</td>
                             </tr>
                         ))}
-                        {filteredTasks.length === 0 && (
+                        {tasks.length === 0 && (
                             <tr>
                                 <td className="p-4 text-zinc-500" colSpan={6}>No tasks match the selected filters.</td>
                             </tr>
@@ -271,6 +374,5 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
                     </tbody>
                 </table>
             </div>
-        </div>
     );
 }
