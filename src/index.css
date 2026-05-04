@@ -237,6 +237,11 @@
     background-color: var(--modal-bg-dark) !important;
   }
 }
+  /* Improve horizontal touch scrolling on mobile devices */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
 
 @keyframes fadeIn {
   from {
