@@ -8,14 +8,9 @@ export function NotificationPopover() {
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // Initial fetch
+    // Initial fetch on mount — periodic refresh is managed by DashboardShell
     useEffect(() => {
         void fetchNotifications();
-        // Poll every 30 seconds
-        const interval = window.setInterval(() => {
-            void fetchNotifications();
-        }, 30000);
-        return () => clearInterval(interval);
     }, [fetchNotifications]);
 
     // Close on click outside

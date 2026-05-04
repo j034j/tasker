@@ -22,9 +22,12 @@ export function ManageOrgModal({ org, onClose }: ManageOrgModalProps) {
         allUsers
     } = useStore();
 
-    const [activeTab, setActiveTab] = useState<'details' | 'users' | 'boards'>('details');
+    const [activeTab, setActiveTab] = useState<'details' | 'users' | 'boards' | 'departments'>('details');
     const [orgName, setOrgName] = useState(org.name);
     const [boards, setBoards] = useState<{ id: string; name: string }[]>([]);
+    const [departments, setDepartments] = useState<{ id: string; name: string; admin_user_id?: string | null }[]>([]);
+    const [newDeptName, setNewDeptName] = useState('');
+    const [newDeptAdmin, setNewDeptAdmin] = useState<string | null>(null);
 
     // Filter users for this org
     const orgUsers = allUsers.filter(u => (u as { org_id?: string }).org_id === org.id || (u as { org_name?: string }).org_name === org.name);
@@ -37,6 +40,16 @@ export function ManageOrgModal({ org, onClose }: ManageOrgModalProps) {
     useEffect(() => {
         if (activeTab === 'boards') {
             loadBoards();
+        }
+        if (activeTab === 'departments') {
+            (async () => {
+                try {
+                    const { data } = await (await import('@/lib/axios')).api.get(`/orgs/${org.id}/departments`);
+                    setDepartments(Array.isArray(data?.departments) ? data.departments : []);
+                } catch (err) {
+                    console.error('Failed to load departments', err);
+                }
+            })();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
@@ -88,6 +101,12 @@ export function ManageOrgModal({ org, onClose }: ManageOrgModalProps) {
                         className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'boards' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-zinc-500'}`}
                     >
                         Boards
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('departments')}
+                        className={`px-6 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'departments' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-zinc-500'}`}
+                    >
+                        Departments
                     </button>
                 </div>
 
@@ -149,6 +168,61 @@ export function ManageOrgModal({ org, onClose }: ManageOrgModalProps) {
                                 </div>
                             ))}
                             {boards.length === 0 && <p className="text-zinc-500 italic">No boards found.</p>}
+                        </div>
+                    )}
+
+                    {/* DEPARTMENTS TAB */}
+                    {activeTab === 'departments' && (
+                        <div className="space-y-6">
+                            <div className="flex items-center gap-3">
+                                <input value={newDeptName} onChange={e => setNewDeptName(e.target.value)} placeholder="New department name" className="flex-1 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/50 dark:bg-zinc-800" />
+                                <select value={newDeptAdmin || ''} onChange={e => setNewDeptAdmin(e.target.value || null)} className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/50 dark:bg-zinc-800">
+                                    <option value="">No admin</option>
+                                    {orgUsers.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                                </select>
+                                <Button onClick={async () => {
+                                    if (!newDeptName.trim()) return alert('Enter a department name');
+                                    try {
+                                        const res = await (await import('@/lib/axios')).api.post(`/orgs/${org.id}/departments`, { name: newDeptName.trim(), adminUserId: newDeptAdmin });
+                                        setDepartments(prev => [{ ...res.data, admin_user_id: res.data?.admin_user_id || res.data?.adminUserId || null }, ...prev]);
+                                        setNewDeptName(''); setNewDeptAdmin(null);
+                                    } catch (err) {
+                                        console.error(err);
+                                        alert('Failed to create department');
+                                    }
+                                }}>Create</Button>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3">
+                                {departments.map(d => (
+                                    <div key={d.id} className="p-4 rounded-2xl bg-gradient-to-br from-white to-indigo-50 dark:from-zinc-900 dark:to-indigo-900/20 border border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                                        <div>
+                                            <p className="font-semibold">{d.name}</p>
+                                            <p className="text-xs text-zinc-500">ID: {d.id}</p>
+                                            <p className="text-xs text-zinc-500">Weekly overview: available in Weekly Tasks for this department.</p>
+                                            <p className="text-xs text-zinc-500">Admin: { (orgUsers.find(u => u.id === d.admin_user_id)?.name) || '—' }</p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button className="text-zinc-500 hover:text-indigo-600" onClick={async () => {
+                                                const newName = prompt('Update department name', d.name);
+                                                if (!newName) return;
+                                                try {
+                                                    await (await import('@/lib/axios')).api.put(`/departments/${d.id}`, { name: newName });
+                                                    setDepartments(prev => prev.map(x => x.id === d.id ? { ...x, name: newName } : x));
+                                                } catch (err) { console.error(err); alert('Failed to update'); }
+                                            }}>Edit</button>
+                                            <button className="text-red-500 hover:text-red-700" onClick={async () => {
+                                                if (!confirm(`Delete department ${d.name}?`)) return;
+                                                try {
+                                                    await (await import('@/lib/axios')).api.delete(`/departments/${d.id}`);
+                                                    setDepartments(prev => prev.filter(x => x.id !== d.id));
+                                                } catch (err) { console.error(err); alert('Failed to delete'); }
+                                            }}>Delete</button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {departments.length === 0 && <p className="text-zinc-500 italic">No departments yet.</p>}
+                            </div>
                         </div>
                     )}
 

@@ -27,6 +27,7 @@ export interface Task {
     interested_users?: string; // Comma-separated IDs
     admin_override_urgency?: number | null;
     admin_override_priority?: number;
+    blocked_by?: { id: string, title: string }[];
 }
 
 interface Column {
@@ -39,6 +40,8 @@ interface Board {
     id: string;
     name: string;
     created_at?: string;
+    org_id?: string;
+    department_id?: string | null;
     columns: Column[];
     created_by?: string;
     creator_name?: string;
@@ -238,6 +241,8 @@ export interface ReportingWeeklyTask {
     id: string;
     board_id: string;
     board_name: string;
+    department_id?: string | null;
+    department_name?: string | null;
     title: string;
     status: 'not_started' | 'in_progress' | 'completed';
     due_date: string | null;
@@ -258,6 +263,8 @@ export interface PublicBoardOverview {
 
 export interface ReportingOverview {
     orgId: string;
+    department_id?: string | null;
+    department_name?: string | null;
     week_start: string;
     week_end: string;
     active_projects: ReportingProjectSummary[];
@@ -336,7 +343,7 @@ export interface WeeklyObjectiveHistoryEntry {
 
 interface AppState {
     board: Board | null;
-    boards: { id: string; name: string; created_at?: string; followers?: string; created_by?: string; creator_name?: string; archived?: number; is_public?: number }[];
+    boards: { id: string; name: string; created_at?: string; org_id?: string; department_id?: string | null; followers?: string; created_by?: string; creator_name?: string; archived?: number; is_public?: number }[];
     loading: boolean;
     weatherImpact: number;
     currentSeason: 'Spring' | 'Summer' | 'Autumn' | 'Winter';
@@ -352,13 +359,13 @@ interface AppState {
 
     fetchBoard: (id: string) => Promise<void>;
     fetchBoards: (orgId: string) => Promise<void>;
-    createBoard: (name: string, orgId: string, isPublic: boolean) => Promise<void>;
+    createBoard: (name: string, orgId: string, isPublic: boolean, departmentId?: string | null) => Promise<void>;
     moveTask: (taskId: string, targetColId: string) => Promise<void>;
     deleteTask: (taskId: string) => Promise<void>;
     toggleArchiveTask: (taskId: string, archived: boolean) => Promise<void>;
 
     deleteBoard: (boardId: string) => Promise<void>;
-    updateBoard: (boardId: string, updates: { name?: string, archived?: boolean }) => Promise<void>;
+    updateBoard: (boardId: string, updates: { name?: string, archived?: boolean, departmentId?: string | null }) => Promise<void>;
     deleteOrganization: () => Promise<void>;
 
     setRankingWeights: (weights: RankingWeights) => void;
@@ -381,7 +388,7 @@ interface AppState {
     registerSuperAdmin: (data: { secret: string; email: string; password: string; name: string }) => Promise<void>;
     deElevateSuperAdmin: (password: string, targetRole?: 'org_super_admin' | 'admin' | 'member') => Promise<void>;
     reportingOverview: ReportingOverview | null;
-    fetchReportingOverview: (orgId: string, weekStart?: string) => Promise<void>;
+    fetchReportingOverview: (orgId: string, weekStart?: string, departmentId?: string | null) => Promise<void>;
     orgMembersOverview: OrgMemberOverview[];
     fetchOrgMembersOverview: (orgId: string, weekStart?: string) => Promise<void>;
     requestOrgSuperAdminPromotion: (orgId: string, targetUserId: string, currentPassword: string) => Promise<{ requestId: string; expiresAt: string }>;
@@ -418,6 +425,13 @@ interface AppState {
     sendTaskInvite: (taskId: string, inviteeUserId: string, message?: string) => Promise<void>;
     acceptInvite: (inviteId: string) => Promise<void>;
     declineInvite: (inviteId: string) => Promise<void>;
+
+    // Task Dependencies
+    createTaskDependency: (parentTaskId: string, childTaskId: string) => Promise<void>;
+    fetchTaskDependencies: (taskId: string) => Promise<{ id: string; parent_task_id: string; child_task_id: string; created_at?: string; parent_title: string; child_title: string; parent_board: string; child_board: string }[]>;
+    deleteTaskDependency: (id: string) => Promise<void>;
+    fetchTaskChain: (taskId: string) => Promise<{ tasks: any[], edges: any[], departments?: { id: string | null; name: string; adminUserId: string | null; taskCount: number }[], estimatedTotalLabel?: string | null, missingDurationTaskIds?: string[] }>;
+    alertTaskChainDepartments: (taskId: string) => Promise<{ notifiedCount: number; departments: string[]; taskCount: number }>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -464,9 +478,9 @@ export const useStore = create<AppState>((set, get) => ({
             set({ loading: false });
         }
     },
-    createBoard: async (name, orgId, isPublic) => {
+    createBoard: async (name, orgId, isPublic, departmentId) => {
         try {
-            const { data } = await api.post('/boards', { name, orgId, isPublic });
+            const { data } = await api.post('/boards', { name, orgId, isPublic, departmentId });
             const newBoard = {
                 ...data,
                 creator_name: get().currentUser?.name,
@@ -489,12 +503,15 @@ export const useStore = create<AppState>((set, get) => ({
             set({ boards: data });
         } catch (e) {
             console.error(e);
-            useToastStore.getState().addToast('Failed to create board', 'error');
+            useToastStore.getState().addToast('Failed to load boards', 'error');
         }
     },
-    fetchReportingOverview: async (orgId, weekStart) => {
+    fetchReportingOverview: async (orgId, weekStart, departmentId) => {
         try {
-            const query = weekStart ? `?weekStart=${encodeURIComponent(weekStart)}` : '';
+            const params = new URLSearchParams();
+            if (weekStart) params.set('weekStart', weekStart);
+            if (departmentId) params.set('departmentId', departmentId);
+            const query = params.toString() ? `?${params.toString()}` : '';
             const { data } = await api.get(`/reports/overview/${orgId}${query}`);
             set({ reportingOverview: data });
         } catch (e) {
@@ -1018,6 +1035,56 @@ export const useStore = create<AppState>((set, get) => ({
             await api.post(`/admin/users/${id}/reset-password`, { password });
         } catch (e) {
             console.error('Failed to reset password', e);
+            throw e;
+        }
+    },
+
+    createTaskDependency: async (parentTaskId, childTaskId) => {
+        try {
+            await api.post('/task-dependencies', { parentTaskId, childTaskId });
+            useToastStore.getState().addToast('Dependency created', 'success');
+        } catch (e) {
+            console.error('Failed to create task dependency', e);
+            useToastStore.getState().addToast('Failed to create dependency', 'error');
+            throw e;
+        }
+    },
+    fetchTaskDependencies: async (taskId) => {
+        try {
+            const { data } = await api.get(`/tasks/${taskId}/dependencies`);
+            return data.dependencies || [];
+        } catch (e) {
+            console.error('Failed to fetch task dependencies', e);
+            return [];
+        }
+    },
+    deleteTaskDependency: async (id) => {
+        try {
+            await api.delete(`/task-dependencies/${id}`);
+            useToastStore.getState().addToast('Dependency removed', 'success');
+        } catch (e) {
+            console.error('Failed to delete task dependency', e);
+            useToastStore.getState().addToast('Failed to delete dependency', 'error');
+            throw e;
+        }
+    },
+    fetchTaskChain: async (taskId) => {
+        try {
+            const { data } = await api.get(`/tasks/${taskId}/chain`);
+            return data;
+        } catch (e) {
+            console.error('Failed to fetch task chain', e);
+            throw e;
+        }
+    },
+    alertTaskChainDepartments: async (taskId) => {
+        try {
+            const { data } = await api.post(`/tasks/${taskId}/chain/alert`);
+            useToastStore.getState().addToast(`Alerted ${data.notifiedCount || 0} people across the task chain`, 'success');
+            return data;
+        } catch (e) {
+            console.error('Failed to alert task chain departments', e);
+            useToastStore.getState().addToast('Failed to alert task chain departments', 'error');
             throw e;
         }
     }

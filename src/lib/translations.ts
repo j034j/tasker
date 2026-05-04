@@ -138,7 +138,20 @@ export type TranslationKey =
     | 'profile_title'
     | 'profile_new_password'
     | 'profile_password_hint'
-    | 'profile_save_btn';
+    | 'profile_save_btn'
+    // Task Dependencies
+    | 'dependencies_title'
+    | 'dependencies_current'
+    | 'dependencies_add_new'
+    | 'dependencies_parent_label'
+    | 'dependencies_child_label'
+    | 'dependencies_select_placeholder'
+    | 'dependencies_create_btn'
+    | 'dependencies_creating'
+    | 'dependencies_no_deps'
+    | 'dependencies_remove_confirm'
+    | 'dependencies_error_self'
+    | 'dependencies_error_circular';
 
 export const translations: Record<Language, Record<TranslationKey, string>> = {
     en: {
@@ -211,7 +224,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         // Create Board Modal
         create_board_title: 'Create New Board',
         board_name_label: 'Board Name',
-        board_name_placeholder: 'e.g. Q1 Roadmap',
+        board_name_placeholder: 'Project Roadmap',
         visibility_label: 'Visibility',
         vis_private: 'Private',
         vis_private_desc: 'Only members can join.',
@@ -285,7 +298,19 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         profile_title: 'My Profile',
         profile_new_password: 'New Password (Optional)',
         profile_password_hint: 'Leave blank to keep current password',
-        profile_save_btn: 'Save Changes'
+        profile_save_btn: 'Save Changes',
+        dependencies_title: 'Task Dependencies',
+        dependencies_current: 'Current Dependencies',
+        dependencies_add_new: 'Add New Dependency',
+        dependencies_parent_label: 'Parent Task (Pre-requisite)',
+        dependencies_child_label: 'Child Task (Dependent)',
+        dependencies_select_placeholder: 'Select task (optional, default: current)',
+        dependencies_create_btn: 'Link Tasks',
+        dependencies_creating: 'Linking...',
+        dependencies_no_deps: 'No dependencies linked yet.',
+        dependencies_remove_confirm: 'Are you sure you want to remove this dependency?',
+        dependencies_error_self: 'Cannot create dependency on self',
+        dependencies_error_circular: 'Circular dependency detected'
     },
     de: {
         app_title: 'Tasker - Aufgabenplaner',
@@ -358,7 +383,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         // Create Board Modal
         create_board_title: 'Neues Board Erstellen',
         board_name_label: 'Board Name',
-        board_name_placeholder: 'z.B. Q1 Roadmap',
+        board_name_placeholder: 'Projekt-Roadmap',
         visibility_label: 'Sichtbarkeit',
         vis_private: 'Privat',
         vis_private_desc: 'Nur Mitglieder können beitreten.',
@@ -433,6 +458,18 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         profile_title: 'Mein Profil',
         profile_new_password: 'Neues Passwort (Optional)',
         profile_password_hint: 'Leer lassen, um aktuelles Passwort zu behalten',
-        profile_save_btn: 'Änderungen speichern'
+        profile_save_btn: 'Änderungen speichern',
+        dependencies_title: 'Aufgaben-Abhängigkeiten',
+        dependencies_current: 'Aktuelle Abhängigkeiten',
+        dependencies_add_new: 'Neue Abhängigkeit hinzufügen',
+        dependencies_parent_label: 'Vorgänger-Aufgabe (Voraussetzung)',
+        dependencies_child_label: 'Nachfolger-Aufgabe (Abhängig)',
+        dependencies_select_placeholder: 'Aufgabe wählen (optional, Standard: aktuell)',
+        dependencies_create_btn: 'Aufgaben Verknüpfen',
+        dependencies_creating: 'Verknüpfe...',
+        dependencies_no_deps: 'Noch keine Abhängigkeiten verknüpft.',
+        dependencies_remove_confirm: 'Sind Sie sicher, dass Sie diese Abhängigkeit entfernen möchten?',
+        dependencies_error_self: 'Abhängigkeit von sich selbst nicht möglich',
+        dependencies_error_circular: 'Zirkuläre Abhängigkeit erkannt'
     }
 };

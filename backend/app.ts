@@ -69,5 +69,18 @@ app.use(requestRateLimiter);
 
 app.use('/api', router);
 
+// Development error handler: logs stack traces and returns error details in dev only
+if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+        console.error('Unhandled error:', err && err.stack ? err.stack : err);
+        res.status(500).json({ error: String(err?.message || 'Internal Server Error'), stack: err?.stack });
+    });
+} else {
+    app.use((_err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+        res.status(500).json({ error: 'Internal Server Error' });
+    });
+}
+
 // Export app for Serverless
 export default app;
