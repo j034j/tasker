@@ -11,8 +11,17 @@ type AuthErrorUi = {
 };
 
 const normalizeAuthError = (mode: 'login' | 'create-org' | 'join-org', err: unknown, fallback: string): AuthErrorUi => {
-    const axiosErr = err as { response?: { data?: { error?: string } }; code?: string };
-    const serverMessage = axiosErr?.response?.data?.error || '';
+    const axiosErr = err as { response?: { data?: { error?: any } }; code?: string };
+    let rawError = axiosErr?.response?.data?.error;
+    let serverMessage = '';
+    if (Array.isArray(rawError)) {
+        serverMessage = rawError.map(e => String(e.message || e)).join(' ');
+    } else if (rawError && typeof rawError === 'object') {
+        serverMessage = JSON.stringify(rawError);
+    } else {
+        serverMessage = String(rawError || '');
+    }
+    
     const lowered = serverMessage.toLowerCase();
 
     if (lowered.includes('user not found')) {
