@@ -276,12 +276,6 @@ export const initDB = async () => {
     'CREATE INDEX IF NOT EXISTS idx_columns_board_id ON columns(board_id)',
     'CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(org_id)',
     'CREATE INDEX IF NOT EXISTS idx_boards_org_id ON boards(org_id)'
-  , 'CREATE TABLE IF NOT EXISTS departments (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, name TEXT NOT NULL, admin_user_id TEXT DEFAULT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(org_id) REFERENCES organizations(id), FOREIGN KEY(admin_user_id) REFERENCES users(id))'
-  , 'ALTER TABLE boards ADD COLUMN department_id TEXT'
-  , 'CREATE INDEX IF NOT EXISTS idx_boards_department_id ON boards(department_id)'
-  , 'CREATE TABLE IF NOT EXISTS task_dependencies (id TEXT PRIMARY KEY, parent_task_id TEXT NOT NULL, child_task_id TEXT NOT NULL, org_id TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(parent_task_id) REFERENCES tasks(id), FOREIGN KEY(child_task_id) REFERENCES tasks(id), FOREIGN KEY(org_id) REFERENCES organizations(id))'
-  , 'CREATE INDEX IF NOT EXISTS idx_task_dependencies_parent ON task_dependencies(parent_task_id)'
-  , 'CREATE INDEX IF NOT EXISTS idx_task_dependencies_child ON task_dependencies(child_task_id)'
   ];
 
   const isDebug = process.env.DEBUG === '1';

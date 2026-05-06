@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode, createDepartment, getDepartmentsForOrg, getDepartment, updateDepartment, deleteDepartment, getDepartmentBoards, getOrganizationCentralView, createTaskDependency, getTaskDependencies, deleteTaskDependency, getTaskChain, alertTaskChainDepartments } from './controllers.js';
+import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode } from './controllers.js';
 import { authenticateToken, requireSuperAdmin, loginRateLimiter, passwordResetRateLimiter, translateRateLimiter } from './middleware.js';
 
 export const router = Router();
@@ -13,8 +13,6 @@ router.get('/health', (_req: Request, res: Response) => {
 router.post('/orgs/register', registerOrg);
 router.get('/orgs/lookup', findOrg);
 router.get('/orgs/search', searchOrgs);
-router.post('/orgs/:orgId/departments', authenticateToken, createDepartment);
-router.get('/orgs/:orgId/departments', authenticateToken, getDepartmentsForOrg);
 router.post('/auth/login', loginRateLimiter, login);
 router.post('/auth/register', registerUser);
 router.post('/auth/email-verification/request', requestEmailVerificationCode);
@@ -56,21 +54,7 @@ router.get('/invites', authenticateToken, getMyInvites);
 router.post('/invites/:id/accept', authenticateToken, acceptTaskInvite);
 router.post('/invites/:id/decline', authenticateToken, declineTaskInvite);
 
-// Task Dependencies
-router.post('/task-dependencies', authenticateToken, createTaskDependency);
-router.get('/tasks/:taskId/dependencies', authenticateToken, getTaskDependencies);
-router.get('/tasks/:taskId/chain', authenticateToken, getTaskChain);
-router.post('/tasks/:taskId/chain/alert', authenticateToken, alertTaskChainDepartments);
-router.delete('/task-dependencies/:id', authenticateToken, deleteTaskDependency);
-
 router.post('/translate', authenticateToken, translateRateLimiter, translateText);
-
-// Department routes
-router.get('/departments/:id', authenticateToken, getDepartment);
-router.put('/departments/:id', authenticateToken, updateDepartment);
-router.delete('/departments/:id', authenticateToken, deleteDepartment);
-router.get('/departments/:id/boards', authenticateToken, getDepartmentBoards);
-router.get('/orgs/:orgId/central-view', authenticateToken, getOrganizationCentralView);
 
 // Super Admin
 router.post('/auth/super-admin/register', registerSuperAdmin);

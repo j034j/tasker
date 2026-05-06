@@ -1,46 +1,13 @@
 node_modules
 dist
-
-# Local databases (all environments)
-*.db
-*.db-wal
-*.db-shm
-
-# Environment files
+*.log
+tasker.db
+tasker.db-wal
+tasker.db-shm
+backend/tasker.db
 .env
 .env.local
-.env*.local
-
-# Logs
-*.log
-
-# OS artifacts
 .DS_Store
-Thumbs.db
 
-# Vercel
 .vercel
-
-# Debug / temp / one-off scripts at project root
-debug_output.txt
-errors.txt
-lint_output.txt
-modal_diff.txt
-modal_prev.tsx
-modal_prev.tsx.bak
-*.bak
-debug_db.ts
-debug_schema_check.ts
-check_table.ts
-cleanup_test_records.ts
-fix_db_schema.ts
-migrate_last_board.ts
-migrate_public.ts
-query_db.ts
-verify_*.ts
-verify_*.json
-register_error_body.txt
-register_response.json
-request_response.json
-server_verif.log
-scratch/
+.env*.local

@@ -1,4 +1,3 @@
-
 import Database from 'better-sqlite3';
 import type { DatabaseAdapter, QueryResult } from './db_adapter.js';
 
