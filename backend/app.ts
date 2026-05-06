@@ -10,6 +10,8 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:51
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+const isVercelOrigin = (origin: string) => origin.endsWith('.vercel.app');
+
 const rateWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 300);
 const rateBucket = new Map<string, { count: number; resetAt: number }>();
@@ -57,10 +59,10 @@ const securityHeaders = (_req: Request, res: Response, next: NextFunction) => {
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || (!isProduction && isLocalDevOrigin(origin))) {
+        if (!origin || allowedOrigins.includes(origin) || isVercelOrigin(origin) || (!isProduction && isLocalDevOrigin(origin))) {
             return callback(null, true);
         }
-        return callback(new Error('CORS origin denied'));
+        return callback(new Error(`CORS origin denied: ${origin}`));
     }
 }));
 app.use(express.json({ limit: '1mb' }));
