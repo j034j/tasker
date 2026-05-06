@@ -8,21 +8,28 @@ import type { DatabaseAdapter } from './db_adapter.js';
 import { sendEmail, generateSixDigitCode, hashVerificationCode, isConsoleEmailMode } from './email.js';
 import { createDepartmentSchema, updateDepartmentSchema, registerSchema, loginSchema, moveTaskSchema, orgRegistrationSchema } from './validators.js';
 
-const JWT_SECRET = process.env.JWT_SECRET;
+// Environment variables handled inside functions for Vercel resilience
+const getJWTSecret = () => {
+    const secret = process.env.JWT_SECRET || (process.env.NODE_ENV !== 'production' ? 'dev_secret_fallback' : '');
+    if (!secret && process.env.NODE_ENV === 'production') {
+        console.error('CRITICAL: JWT_SECRET missing in production!');
+    }
+    return secret;
+};
+
+const getSuperAdminSecret = () => {
+    const secret = process.env.SUPER_ADMIN_SECRET || (process.env.NODE_ENV !== 'production' ? 'dev_super_admin_fallback' : '');
+    if (!secret && process.env.NODE_ENV === 'production') {
+        console.error('CRITICAL: SUPER_ADMIN_SECRET missing in production!');
+    }
+    return secret;
+};
+
 const JWT_EXPIRES_IN_SECONDS = Number(process.env.JWT_EXPIRES_IN_SECONDS || 60 * 60 * 12);
-const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET;
 const EMAIL_VERIFICATION_EXPIRES_HOURS = Number(process.env.EMAIL_VERIFICATION_EXPIRES_HOURS || 24);
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
-
 const isProduction = process.env.NODE_ENV === 'production';
 const DEV_FALLBACK_SUPER_ADMIN_SECRET = process.env.DEV_FALLBACK_SUPER_ADMIN_SECRET || '';
-
-if (!JWT_SECRET) {
-    throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
-}
-if (!SUPER_ADMIN_SECRET) {
-    throw new Error('Missing required env var: SUPER_ADMIN_SECRET. Set in .env file.');
-}
 
 
 interface AuthenticatedRequest extends Request {
@@ -413,20 +420,25 @@ const taskHasDependencyPath = async (fromTaskId: string, toTaskId: string, orgId
     return false;
 };
 
-const issueRegistrationVerificationToken = (email: string) =>
-    jwt.sign(
+const issueRegistrationVerificationToken = (email: string) => {
+    const secret = getJWTSecret();
+    if (!secret) throw new Error('JWT_SECRET not configured');
+    return jwt.sign(
         {
             type: 'email_verification',
             purpose: EMAIL_VERIFICATION_PURPOSE_REGISTER,
             email: email.trim().toLowerCase()
         },
-        JWT_SECRET,
+        secret,
         { expiresIn: EMAIL_VERIFICATION_EXPIRES_HOURS * 60 * 60 }
     );
+};
 
 const validateRegistrationVerificationToken = (token: string, email: string): boolean => {
     try {
-        const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload & { type?: string; purpose?: string; email?: string };
+        const secret = getJWTSecret();
+        if (!secret) return false;
+        const payload = jwt.verify(token, secret) as jwt.JwtPayload & { type?: string; purpose?: string; email?: string };
         return payload?.type === 'email_verification'
             && payload?.purpose === EMAIL_VERIFICATION_PURPOSE_REGISTER
             && payload?.email === email.trim().toLowerCase();
@@ -614,7 +626,9 @@ export const registerOrg = async (req: Request, res: Response) => {
         });
         console.log('Transaction Success');
 
-        const token = jwt.sign({ userId, orgId, role: 'org_super_admin' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const secret = getJWTSecret();
+        if (!secret) throw new Error('JWT_SECRET not configured');
+        const token = jwt.sign({ userId, orgId, role: 'org_super_admin' }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
         res.json({
             success: true,
             orgId,
@@ -636,7 +650,8 @@ export const registerOrg = async (req: Request, res: Response) => {
 export const registerSuperAdmin = async (req: Request, res: Response) => {
     const { secret, name, email, password } = req.body;
     const providedSecret = typeof secret === 'string' ? secret.trim() : '';
-    const validSecret = providedSecret === SUPER_ADMIN_SECRET
+    const secretKey = getSuperAdminSecret();
+    const validSecret = (providedSecret && secretKey && providedSecret === secretKey)
         || (!isProduction && providedSecret === DEV_FALLBACK_SUPER_ADMIN_SECRET);
     if (!validSecret) {
         return res.status(403).json({ error: 'Invalid Super Admin Secret' });
@@ -669,7 +684,9 @@ export const registerSuperAdmin = async (req: Request, res: Response) => {
             );
         });
 
-        const token = jwt.sign({ userId, orgId, role: 'super_admin' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const secret = getJWTSecret();
+        if (!secret) throw new Error('JWT_SECRET not configured');
+        const token = jwt.sign({ userId, orgId, role: 'super_admin' }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
         res.json({
             success: true,
             orgId,
@@ -920,8 +937,10 @@ export const login = async (req: Request, res: Response) => {
         }
         if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
 
+        const secret = getJWTSecret();
+        if (!secret) throw new Error('JWT_SECRET not configured');
         const orgRow = first(asRows<{ name: string }>((await db.query('SELECT name FROM organizations WHERE id = ?', [user.org_id])).rows));
-        const token = jwt.sign({ userId: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const token = jwt.sign({ userId: user.id, orgId: user.org_id, role: user.role }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
 
         res.json({
             success: true,
@@ -1044,7 +1063,9 @@ export const registerUser = async (req: Request, res: Response) => {
             }
         }
 
-        const token = jwt.sign({ userId, orgId, role: 'member' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const secret = getJWTSecret();
+        if (!secret) throw new Error('JWT_SECRET not configured');
+        const token = jwt.sign({ userId, orgId, role: 'member' }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
         const orgRow = first((await db.query('SELECT name FROM organizations WHERE id = ?', [orgId])).rows);
 
         res.json({
