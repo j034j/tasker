@@ -37,6 +37,7 @@ const splitSqlStatements = (sql: string): string[] =>
     .map((statement) => `${statement};`);
 
 export const initDB = async () => {
+  await ensureDB();
   console.log('Initializing Database...');
   const schema = `
       CREATE TABLE IF NOT EXISTS organizations (

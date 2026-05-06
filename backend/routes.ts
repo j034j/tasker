@@ -5,8 +5,13 @@ import { authenticateToken, requireSuperAdmin, loginRateLimiter, passwordResetRa
 
 export const router = Router();
 
-router.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok' });
+router.get('/health', async (_req: Request, res: Response) => {
+    try {
+        await db.query('SELECT 1');
+        res.json({ status: 'ok', database: 'connected' });
+    } catch (err: any) {
+        res.status(500).json({ status: 'error', database: 'disconnected', message: err.message });
+    }
 });
 
 // Auth & Org
