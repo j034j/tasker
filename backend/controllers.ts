@@ -641,15 +641,16 @@ export const getAllUsers = async (_req: Request, res: Response) => {
 };
 
 export const login = async (req: Request, res: Response) => {
-    const { email, identifier, password } = req.body;
-    const normalizedIdentifier = typeof identifier === 'string'
-        ? identifier.trim().toLowerCase()
+    // Support both { email } and { identifier } for backwards compatibility
+    const { email, identifier: rawIdentifier, password } = req.body;
+    const normalizedIdentifier = typeof rawIdentifier === 'string'
+        ? rawIdentifier.trim().toLowerCase()
         : typeof email === 'string'
             ? email.trim().toLowerCase()
             : '';
 
     // Validate input with Zod
-    const validation = loginSchema.safeParse({ email: normalizedIdentifier, password });
+    const validation = loginSchema.safeParse({ identifier: normalizedIdentifier, password });
     if (!validation.success) {
         return res.status(400).json({ error: validation.error.issues[0].message });
     }
