@@ -1,4 +1,5 @@
 {
+    "buildCommand": "npm install && npx vite build",
     "rewrites": [
         {
             "source": "/api/(.*)",
