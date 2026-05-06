@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode } from './controllers.js';
 import { authenticateToken, requireSuperAdmin, loginRateLimiter, passwordResetRateLimiter, translateRateLimiter } from './middleware.js';
+import db from './db.js';
 
 export const router = Router();
 

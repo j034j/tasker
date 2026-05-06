@@ -15,7 +15,9 @@ type AuthErrorUi = {
 };
 
 const normalizeAuthError = (mode: 'login' | 'create-org' | 'join-org', err: unknown, fallback: string): AuthErrorUi => {
-    const axiosErr = err as { response?: { data?: { error?: string } }; code?: string };
+    const axiosErr = err as { response?: { data?: { error?: string, message?: string } }; code?: string };
+    console.error('Server Error Response:', axiosErr?.response?.data); // <--- Added this log
+    
     const serverMessageRaw = axiosErr?.response?.data?.error;
     const serverMessage = typeof serverMessageRaw === 'string' ? serverMessageRaw : '';
     const lowered = serverMessage.toLowerCase();
