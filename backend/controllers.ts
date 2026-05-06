@@ -19,6 +19,7 @@ const JWT_EXPIRES_IN_SECONDS = Number(process.env.JWT_EXPIRES_IN_SECONDS || 60 *
 const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET;
 const EMAIL_VERIFICATION_EXPIRES_HOURS = Number(process.env.EMAIL_VERIFICATION_EXPIRES_HOURS || 24);
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
+const SKIP_EMAIL_VERIFICATION = process.env.SKIP_EMAIL_VERIFICATION === 'true';
 
 if (!JWT_SECRET) {
     throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
@@ -341,6 +342,7 @@ const issueRegistrationVerificationToken = (email: string) =>
     );
 
 const validateRegistrationVerificationToken = (token: string, email: string): boolean => {
+    if (SKIP_EMAIL_VERIFICATION) return true;
     try {
         const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload & { type?: string; purpose?: string; email?: string };
         return payload?.type === 'email_verification'
