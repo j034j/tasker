@@ -16,7 +16,8 @@ type AuthErrorUi = {
 
 const normalizeAuthError = (mode: 'login' | 'create-org' | 'join-org', err: unknown, fallback: string): AuthErrorUi => {
     const axiosErr = err as { response?: { data?: { error?: string } }; code?: string };
-    const serverMessage = axiosErr?.response?.data?.error || '';
+    const serverMessageRaw = axiosErr?.response?.data?.error;
+    const serverMessage = typeof serverMessageRaw === 'string' ? serverMessageRaw : '';
     const lowered = serverMessage.toLowerCase();
 
     if (lowered.includes('user not found')) {
