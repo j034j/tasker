@@ -1382,6 +1382,116 @@ export const deleteTask = async (req: AuthenticatedRequest, res: Response) => {
     }
 };
 
+// Departments CRUD
+export const createDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const { name } = req.body;
+    const orgId = req.user?.orgId;
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!orgId) return res.status(400).json({ error: 'No organization found' });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'Department name is required' });
+    }
+    try {
+        const existing = await db.query('SELECT id FROM departments WHERE org_id = ? AND LOWER(name) = ?', [orgId, name.trim().toLowerCase()]);
+        if (existing.rows.length > 0) {
+            return res.status(409).json({ error: 'Department already exists' });
+        }
+        const id = uuidv4();
+        await db.execute('INSERT INTO departments (id, org_id, name, admin_user_id) VALUES (?, ?, ?, ?)', [id, orgId, name.trim(), req.user.userId]);
+        res.json({ id, name: name.trim(), admin_user_id: req.user.userId });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const getDepartmentsForOrg = async (req: AuthenticatedRequest, res: Response) => {
+    const orgId = String(req.params.orgId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!canAccessOrg(req.user, orgId)) return res.status(403).json({ error: 'Forbidden' });
+    try {
+        const result = await db.query(`
+            SELECT d.id, d.name, d.admin_user_id, u.name as admin_name,
+                   (SELECT COUNT(*) FROM boards WHERE department_id = d.id) as board_count
+            FROM departments d
+            LEFT JOIN users u ON d.admin_user_id = u.id
+            WHERE d.org_id = ?
+            ORDER BY d.name
+        `, [orgId]);
+        res.json({ departments: result.rows });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const getDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        res.json(dept);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const updateDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    const { name } = req.body;
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        if (req.user.role !== 'admin' && req.user.role !== 'org_super_admin' && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Only admins can update departments' });
+        }
+        await db.execute('UPDATE departments SET name = ? WHERE id = ?', [name?.trim() || dept.name, deptId]);
+        res.json({ success: true });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const deleteDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        if (req.user.role !== 'admin' && req.user.role !== 'org_super_admin' && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Only admins can delete departments' });
+        }
+        await db.execute('UPDATE boards SET department_id = NULL WHERE department_id = ?', [deptId]);
+        await db.execute('DELETE FROM departments WHERE id = ?', [deptId]);
+        res.json({ success: true });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const getDepartmentBoards = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        const boards = await db.query('SELECT * FROM boards WHERE department_id = ? ORDER BY created_at DESC', [deptId]);
+        res.json({ boards: boards.rows });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
 export const getBoards = async (req: AuthenticatedRequest, res: Response) => {
     const orgId = String(req.params.orgId);
     try {

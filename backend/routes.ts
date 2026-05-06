@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode } from './controllers.js';
+import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode, createDepartment, getDepartmentsForOrg, getDepartment, updateDepartment, deleteDepartment, getDepartmentBoards } from './controllers.js';
 import { authenticateToken, requireSuperAdmin, loginRateLimiter, passwordResetRateLimiter, translateRateLimiter } from './middleware.js';
 
 export const router = Router();
@@ -40,6 +40,14 @@ router.get('/orgs/:orgId/weekly-objective/history', authenticateToken, getWeekly
 router.put('/orgs/:orgId/weekly-objective', authenticateToken, upsertWeeklyObjective);
 router.post('/orgs/:orgId/super-admin/promote/request', authenticateToken, requestOrgSuperAdminPromotion);
 router.post('/orgs/:orgId/super-admin/promote/confirm', authenticateToken, confirmOrgSuperAdminPromotion);
+
+// Departments
+router.post('/orgs/:orgId/departments', authenticateToken, createDepartment);
+router.get('/orgs/:orgId/departments', authenticateToken, getDepartmentsForOrg);
+router.get('/departments/:deptId', authenticateToken, getDepartment);
+router.put('/departments/:deptId', authenticateToken, updateDepartment);
+router.delete('/departments/:deptId', authenticateToken, deleteDepartment);
+router.get('/departments/:deptId/boards', authenticateToken, getDepartmentBoards);
 
 router.post('/tasks', authenticateToken, createTask);
 router.put('/tasks/:id', authenticateToken, updateTask);
