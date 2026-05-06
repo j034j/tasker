@@ -5,21 +5,23 @@ import { useStore } from '@/lib/store';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useNavigate } from 'react-router-dom';
 
-// TEMPORARY: Set to true to disable email verification for test users
-// Set to false to restore verification requirement
-const SKIP_EMAIL_VERIFICATION_FRONTEND = true;
-
 type AuthErrorUi = {
     message: string;
     hint?: string;
 };
 
 const normalizeAuthError = (mode: 'login' | 'create-org' | 'join-org', err: unknown, fallback: string): AuthErrorUi => {
-    const axiosErr = err as { response?: { data?: { error?: string, message?: string } }; code?: string };
-    console.error('Server Error Response:', axiosErr?.response?.data); // <--- Added this log
+    const axiosErr = err as { response?: { data?: { error?: any } }; code?: string };
+    let rawError = axiosErr?.response?.data?.error;
+    let serverMessage = '';
+    if (Array.isArray(rawError)) {
+        serverMessage = rawError.map(e => String(e.message || e)).join(' ');
+    } else if (rawError && typeof rawError === 'object') {
+        serverMessage = JSON.stringify(rawError);
+    } else {
+        serverMessage = String(rawError || '');
+    }
     
-    const serverMessageRaw = axiosErr?.response?.data?.error;
-    const serverMessage = typeof serverMessageRaw === 'string' ? serverMessageRaw : '';
     const lowered = serverMessage.toLowerCase();
 
     if (lowered.includes('user not found')) {
@@ -247,16 +249,6 @@ export function AuthScreen() {
         }
     };
 
-    // Auto-generate verification token when email is entered (if verification is skipped)
-    useEffect(() => {
-        if (SKIP_EMAIL_VERIFICATION_FRONTEND && email && !verificationToken) {
-            // Create a dummy verification token for backend bypass
-            const dummyToken = `skip-verification-${email.toLowerCase().trim()}-${Date.now()}`;
-            setVerificationToken(dummyToken);
-            setVerificationCodeSent(true);
-        }
-    }, [email, verificationToken]);
-
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -264,7 +256,7 @@ export function AuthScreen() {
 
         try {
             if (mode === 'create-org') {
-                if (!verificationToken && !SKIP_EMAIL_VERIFICATION_FRONTEND) {
+                if (!verificationToken) {
                     setError({ message: 'Verify your email before creating workspace.' });
                     setLoading(false);
                     return;
@@ -278,7 +270,7 @@ export function AuthScreen() {
                     setLoading(false);
                     return;
                 }
-                if (!verificationToken && !SKIP_EMAIL_VERIFICATION_FRONTEND) {
+                if (!verificationToken) {
                     setError({ message: 'Verify your email before joining workspace.' });
                     setLoading(false);
                     return;
@@ -528,7 +520,7 @@ export function AuthScreen() {
                                 placeholder={mode === 'login' ? 'your_email_or_username' : 'name@example.com'}
                             />
                         </div>
-                        {mode !== 'login' && !SKIP_EMAIL_VERIFICATION_FRONTEND && (
+                        {mode !== 'login' && (
                             <div className="w-full rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-50/60 dark:bg-zinc-900/60 p-3 space-y-2">
                                 <div className="flex items-center gap-2">
                                     <button
@@ -570,16 +562,6 @@ export function AuthScreen() {
                                 )}
                                 <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
                                     We use a 6-digit verification code. In console mode, check the backend console output. Requesting a new code invalidates the previous one.
-                                </p>
-                            </div>
-                        )}
-                        {mode !== 'login' && SKIP_EMAIL_VERIFICATION_FRONTEND && (
-                            <div className="w-full rounded-xl border border-amber-200/80 dark:border-amber-700/80 bg-amber-50/60 dark:bg-amber-900/30 p-3 space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-amber-600 dark:text-amber-400 text-xs font-bold">⚠️ Test Mode: Email verification is disabled</span>
-                                </div>
-                                <p className="text-[10px] text-amber-700 dark:text-amber-300">
-                                    You can register with any email address. No verification code required.
                                 </p>
                             </div>
                         )}

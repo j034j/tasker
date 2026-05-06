@@ -8,28 +8,23 @@ import type { DatabaseAdapter } from './db_adapter.js';
 import { sendEmail, generateSixDigitCode, hashVerificationCode, isConsoleEmailMode } from './email.js';
 import { createDepartmentSchema, updateDepartmentSchema, registerSchema, loginSchema, moveTaskSchema, orgRegistrationSchema } from './validators.js';
 
-// Environment variables handled inside functions for Vercel resilience
-const getJWTSecret = () => {
-    const secret = process.env.JWT_SECRET || (process.env.NODE_ENV !== 'production' ? 'dev_secret_fallback' : '');
-    if (!secret && process.env.NODE_ENV === 'production') {
-        console.error('CRITICAL: JWT_SECRET missing in production!');
-    }
-    return secret;
-};
-
-const getSuperAdminSecret = () => {
-    const secret = process.env.SUPER_ADMIN_SECRET || (process.env.NODE_ENV !== 'production' ? 'dev_super_admin_fallback' : '');
-    if (!secret && process.env.NODE_ENV === 'production') {
-        console.error('CRITICAL: SUPER_ADMIN_SECRET missing in production!');
-    }
-    return secret;
-};
-
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN_SECONDS = Number(process.env.JWT_EXPIRES_IN_SECONDS || 60 * 60 * 12);
+const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET;
 const EMAIL_VERIFICATION_EXPIRES_HOURS = Number(process.env.EMAIL_VERIFICATION_EXPIRES_HOURS || 24);
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
+
+const SKIP_EMAIL_VERIFICATION = ['1', 'true', 'yes'].includes(String(process.env.SKIP_EMAIL_VERIFICATION || '').toLowerCase());
+
 const isProduction = process.env.NODE_ENV === 'production';
 const DEV_FALLBACK_SUPER_ADMIN_SECRET = process.env.DEV_FALLBACK_SUPER_ADMIN_SECRET || '';
+
+if (!JWT_SECRET) {
+    throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
+}
+if (!SUPER_ADMIN_SECRET) {
+    throw new Error('Missing required env var: SUPER_ADMIN_SECRET. Set in .env file.');
+}
 
 
 interface AuthenticatedRequest extends Request {
@@ -420,25 +415,20 @@ const taskHasDependencyPath = async (fromTaskId: string, toTaskId: string, orgId
     return false;
 };
 
-const issueRegistrationVerificationToken = (email: string) => {
-    const secret = getJWTSecret();
-    if (!secret) throw new Error('JWT_SECRET not configured');
-    return jwt.sign(
+const issueRegistrationVerificationToken = (email: string) =>
+    jwt.sign(
         {
             type: 'email_verification',
             purpose: EMAIL_VERIFICATION_PURPOSE_REGISTER,
             email: email.trim().toLowerCase()
         },
-        secret,
+        JWT_SECRET,
         { expiresIn: EMAIL_VERIFICATION_EXPIRES_HOURS * 60 * 60 }
     );
-};
 
 const validateRegistrationVerificationToken = (token: string, email: string): boolean => {
     try {
-        const secret = getJWTSecret();
-        if (!secret) return false;
-        const payload = jwt.verify(token, secret) as jwt.JwtPayload & { type?: string; purpose?: string; email?: string };
+        const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload & { type?: string; purpose?: string; email?: string };
         return payload?.type === 'email_verification'
             && payload?.purpose === EMAIL_VERIFICATION_PURPOSE_REGISTER
             && payload?.email === email.trim().toLowerCase();
@@ -449,6 +439,11 @@ const validateRegistrationVerificationToken = (token: string, email: string): bo
 
 export const requestEmailVerificationCode = async (req: Request, res: Response) => {
     const { email, purpose } = req.body;
+    console.log('[DEBUG] requestEmailVerificationCode called', {
+        email: typeof email === 'string' ? email.trim().toLowerCase() : undefined,
+        purpose: typeof purpose === 'string' ? purpose.trim().toLowerCase() : undefined,
+        env: { EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || 'unset', NODE_ENV: process.env.NODE_ENV, USE_TURSO: process.env.USE_TURSO }
+    });
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
     const normalizedPurpose = typeof purpose === 'string' ? purpose.trim().toLowerCase() : EMAIL_VERIFICATION_PURPOSE_REGISTER;
 
@@ -505,7 +500,7 @@ export const requestEmailVerificationCode = async (req: Request, res: Response) 
 
         return res.json(response);
     } catch (error) {
-        console.error('Email verification request failed:', error);
+        console.error('Email verification request failed:', error && (error instanceof Error ? error.stack || error.message : error));
         return res.status(500).json({ error: 'Failed to send verification code email' });
     }
 };
@@ -581,9 +576,12 @@ export const registerOrg = async (req: Request, res: Response) => {
     const normalizedUsername = username.trim().toLowerCase();
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
+    if (!SKIP_EMAIL_VERIFICATION && !validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
         console.warn('Registration failed verification token check for email:', normalizedEmail);
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
+    }
+    if (SKIP_EMAIL_VERIFICATION) {
+        console.warn('SKIP_EMAIL_VERIFICATION is enabled — bypassing email verification for', normalizedEmail);
     }
 
     // Check if email exists
@@ -626,9 +624,7 @@ export const registerOrg = async (req: Request, res: Response) => {
         });
         console.log('Transaction Success');
 
-        const secret = getJWTSecret();
-        if (!secret) throw new Error('JWT_SECRET not configured');
-        const token = jwt.sign({ userId, orgId, role: 'org_super_admin' }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const token = jwt.sign({ userId, orgId, role: 'org_super_admin' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
         res.json({
             success: true,
             orgId,
@@ -650,8 +646,7 @@ export const registerOrg = async (req: Request, res: Response) => {
 export const registerSuperAdmin = async (req: Request, res: Response) => {
     const { secret, name, email, password } = req.body;
     const providedSecret = typeof secret === 'string' ? secret.trim() : '';
-    const secretKey = getSuperAdminSecret();
-    const validSecret = (providedSecret && secretKey && providedSecret === secretKey)
+    const validSecret = providedSecret === SUPER_ADMIN_SECRET
         || (!isProduction && providedSecret === DEV_FALLBACK_SUPER_ADMIN_SECRET);
     if (!validSecret) {
         return res.status(403).json({ error: 'Invalid Super Admin Secret' });
@@ -684,9 +679,7 @@ export const registerSuperAdmin = async (req: Request, res: Response) => {
             );
         });
 
-        const secret = getJWTSecret();
-        if (!secret) throw new Error('JWT_SECRET not configured');
-        const token = jwt.sign({ userId, orgId, role: 'super_admin' }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const token = jwt.sign({ userId, orgId, role: 'super_admin' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
         res.json({
             success: true,
             orgId,
@@ -898,6 +891,11 @@ export const login = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Email/username and password are required' });
     }
 
+    console.log('[DEBUG] login attempt', {
+        identifier: normalizedIdentifier,
+        env: { JWT_SECRET: Boolean(process.env.JWT_SECRET), DATABASE_URL: Boolean(process.env.DATABASE_URL), USE_TURSO: process.env.USE_TURSO }
+    });
+
     try {
         const user = first(asRows<{
             id: string;
@@ -937,10 +935,8 @@ export const login = async (req: Request, res: Response) => {
         }
         if (!validPassword) return res.status(400).json({ error: 'Invalid password' });
 
-        const secret = getJWTSecret();
-        if (!secret) throw new Error('JWT_SECRET not configured');
         const orgRow = first(asRows<{ name: string }>((await db.query('SELECT name FROM organizations WHERE id = ?', [user.org_id])).rows));
-        const token = jwt.sign({ userId: user.id, orgId: user.org_id, role: user.role }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const token = jwt.sign({ userId: user.id, orgId: user.org_id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
 
         res.json({
             success: true,
@@ -950,7 +946,7 @@ export const login = async (req: Request, res: Response) => {
             user: { id: user.id, name: user.name, username: user.username, email: user.email, role: user.role, lastBoardId: user.last_board_id, skills: user.skills, location: user.location }
         });
     } catch (err: unknown) {
-        console.error(err);
+        console.error('Login handler error:', err && (err instanceof Error ? err.stack || err.message : err));
         res.status(500).json({ error: 'Login failed' });
     }
 };
@@ -1020,8 +1016,11 @@ export const registerUser = async (req: Request, res: Response) => {
     if (!normalizedEmail || !normalizedUsername || !password || !userName || !orgId || !verificationToken) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
-    if (!validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
+    if (!SKIP_EMAIL_VERIFICATION && !validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
+    }
+    if (SKIP_EMAIL_VERIFICATION) {
+        console.warn('SKIP_EMAIL_VERIFICATION is enabled — bypassing email verification for', normalizedEmail);
     }
 
     try {
@@ -1063,9 +1062,7 @@ export const registerUser = async (req: Request, res: Response) => {
             }
         }
 
-        const secret = getJWTSecret();
-        if (!secret) throw new Error('JWT_SECRET not configured');
-        const token = jwt.sign({ userId, orgId, role: 'member' }, secret, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const token = jwt.sign({ userId, orgId, role: 'member' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
         const orgRow = first((await db.query('SELECT name FROM organizations WHERE id = ?', [orgId])).rows);
 
         res.json({

@@ -220,7 +220,7 @@ export const initDB = async () => {
   // Use a transaction for the initial schema to minimize network round-trips
   try {
     const schemaStatements = splitSqlStatements(schema);
-    await db.transaction(async (tx) => {
+    await _db.transaction(async (tx) => {
       for (const statement of schemaStatements) {
         await tx.execute(statement);
       }
@@ -297,7 +297,7 @@ export const initDB = async () => {
   const isDebug = process.env.DEBUG === '1';
   for (const sql of migrations) {
     try {
-      await db.execute(sql);
+      await _db.execute(sql);
       if (isDebug) console.log('[DB] Migration applied:', sql.slice(0, 60) + '...');
     } catch {
       if (isDebug) console.log('[DB] Migration skipped (may already exist):', sql.slice(0, 60) + '...');

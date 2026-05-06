@@ -16,18 +16,15 @@ async function getBetterSqlite3() {
     return BetterSqlite3;
 }
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 export class LocalAdapter implements DatabaseAdapter {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private db: any = null;
 
     constructor(filename: string) {
-        // Synchronous initialisation — we load better-sqlite3 eagerly here.
-        // This will throw if the module is unavailable (e.g. Vercel serverless),
-        // but that is intentional: LocalAdapter must not be used in production.
-        // We use require() via a dynamic trick to keep the top-level import lazy.
         try {
-            // Node.js environments: use synchronous require
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
             const Database = require('better-sqlite3');
             this.db = new Database(filename);
             this.db.pragma('journal_mode = WAL');
