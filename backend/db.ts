@@ -1,6 +1,4 @@
 import type { DatabaseAdapter } from './db_adapter.js';
-import { LocalAdapter } from './db_local.js';
-import { TursoAdapter } from './db_turso.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -11,10 +9,16 @@ const useTurso = Boolean(
   hasTursoUrl && (process.env.NODE_ENV === 'production' || enableTursoInDev)
 );
 
+// We define a placeholder for the default export and initialize it later
+// But since exports are static in ESM, we'll use a proxy or just ensure it's initialized.
+// Actually, the cleanest way is to use a singleton pattern or initialize at the top level with await.
+
 if (useTurso) {
+  const { TursoAdapter } = await import('./db_turso.js');
   console.log('Using Database URL:', process.env.DATABASE_URL);
   db = new TursoAdapter(process.env.DATABASE_URL as string, process.env.TURSO_AUTH_TOKEN);
 } else {
+  const { LocalAdapter } = await import('./db_local.js');
   console.log('Using Database URL: Local (tasker.db)');
   if (hasTursoUrl && process.env.NODE_ENV !== 'production') {
     console.log('Turso URL detected but disabled in development. Set USE_TURSO=true to opt in.');
