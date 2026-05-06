@@ -25,8 +25,8 @@ export const ensureDB = async () => {
   return _db;
 };
 
-// Initial trigger
-await ensureDB();
+// Initial trigger (now deferred to initDB or first use)
+// await ensureDB();
 
 
 const splitSqlStatements = (sql: string): string[] =>
@@ -217,12 +217,14 @@ export const initDB = async () => {
       );
     `;
 
-  // Turso rejects multi-statement SQL strings, so execute schema statements one by one.
+  // Use a transaction for the initial schema to minimize network round-trips
   try {
     const schemaStatements = splitSqlStatements(schema);
-    for (const statement of schemaStatements) {
-      await db.execute(statement);
-    }
+    await db.transaction(async (tx) => {
+      for (const statement of schemaStatements) {
+        await tx.execute(statement);
+      }
+    });
   } catch (e) {
     console.error('Schema Init Error:', e);
   }
