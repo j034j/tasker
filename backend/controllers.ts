@@ -6,7 +6,13 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import type { DatabaseAdapter } from './db_adapter.js';
 import { sendEmail, generateSixDigitCode, hashVerificationCode, isConsoleEmailMode } from './email.js';
-import { createDepartmentSchema, updateDepartmentSchema, registerSchema, loginSchema, moveTaskSchema, orgRegistrationSchema } from './validators.js';
+import { 
+    registerSchema, loginSchema, createBoardSchema, createTaskSchema, 
+    updateTaskSchema, updateUserSchema, createOrgSchema, 
+    passwordResetRequestSchema, passwordResetSchema,
+    emailVerificationRequestSchema, emailVerificationVerifySchema,
+    moveTaskSchema, translateTextSchema, orgRegistrationSchema
+} from './validators.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN_SECONDS = Number(process.env.JWT_EXPIRES_IN_SECONDS || 60 * 60 * 12);
@@ -14,10 +20,10 @@ const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET;
 const EMAIL_VERIFICATION_EXPIRES_HOURS = Number(process.env.EMAIL_VERIFICATION_EXPIRES_HOURS || 24);
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 
-const SKIP_EMAIL_VERIFICATION = ['1', 'true', 'yes'].includes(String(process.env.SKIP_EMAIL_VERIFICATION || '').toLowerCase());
-
 const isProduction = process.env.NODE_ENV === 'production';
 const DEV_FALLBACK_SUPER_ADMIN_SECRET = process.env.DEV_FALLBACK_SUPER_ADMIN_SECRET || '';
+
+const SKIP_EMAIL_VERIFICATION = ['1', 'true', 'yes'].includes(String(process.env.SKIP_EMAIL_VERIFICATION || '').toLowerCase());
 
 if (!JWT_SECRET) {
     throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
@@ -90,8 +96,6 @@ type ReportingBoardRow = {
     followers?: string | null;
     is_public: number | boolean;
     archived: number | boolean;
-    department_id?: string | null;
-    department_name?: string | null;
     creator_name?: string | null;
 };
 
@@ -102,8 +106,6 @@ type ReportingTaskRow = {
     interested_users?: string | null;
     due_date?: string | null;
     completed_at?: string | null;
-    created_at?: string | null;
-    archived?: number | boolean | null;
     project_location?: string | null;
     priority_score?: number | string | null;
     urgency?: number | string | null;
@@ -191,8 +193,6 @@ type WeeklyTaskSummary = {
     id: string;
     board_id: string;
     board_name: string;
-    department_id: string | null;
-    department_name: string | null;
     title: string;
     status: 'completed' | 'in_progress' | 'not_started';
     due_date: string | null;
@@ -200,24 +200,6 @@ type WeeklyTaskSummary = {
     location: string | null;
     participants: string[];
     priority_score: number;
-};
-
-type ChainTaskRow = {
-    id: string;
-    title: string;
-    completed_at?: string | null;
-    column_title: string;
-    board_id: string;
-    board_name: string;
-    board_created_by?: string | null;
-    department_id?: string | null;
-    department_name?: string | null;
-    department_admin_user_id?: string | null;
-    project_duration?: string | null;
-    priority_score?: number | string | null;
-    urgency?: number | string | null;
-    assigned_to?: string | null;
-    interested_users?: string | null;
 };
 
 type MemberTaskSummary = {
@@ -339,26 +321,6 @@ const canUseAdminOverride = (role?: string) => role === 'org_super_admin' || rol
 const canAccessOrg = (user: AuthenticatedRequest['user'], orgId: string) =>
     Boolean(user && (user.role === 'super_admin' || user.orgId === orgId));
 
-const parseDurationHours = (value?: string | null): number | null => {
-    const normalized = (value || '').trim().toLowerCase();
-    if (!normalized) return null;
-    const match = normalized.match(/(\d+(?:\.\d+)?)\s*(minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w)\b/);
-    if (!match) return null;
-    const amount = Number(match[1]);
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    const unit = match[2];
-    if (unit.startsWith('m') && unit !== 'month' && unit !== 'months') return amount / 60;
-    if (unit.startsWith('h')) return amount;
-    if (unit.startsWith('d')) return amount * 8;
-    if (unit.startsWith('w')) return amount * 40;
-    return null;
-};
-
-const formatDurationDays = (hours: number): string => {
-    const days = hours / 8;
-    return `${Number.isInteger(days) ? days : Number(days.toFixed(1))} work days`;
-};
-
 const getBoardForAccess = async (boardId: string) => first(asRows<BoardAccessRow>((await db.query(
     'SELECT id, org_id, created_by FROM boards WHERE id = ?',
     [boardId]
@@ -371,49 +333,6 @@ const getTaskScope = async (taskId: string) => first(asRows<TaskScopeRow>((await
     JOIN boards b ON b.id = c.board_id
     WHERE t.id = ?
 `, [taskId])).rows));
-
-const getChainTaskRow = async (taskId: string) => first(asRows<ChainTaskRow>((await db.query(`
-    SELECT
-        t.id,
-        t.title,
-        t.completed_at,
-        t.project_duration,
-        t.priority_score,
-        t.urgency,
-        t.assigned_to,
-        t.interested_users,
-        c.title as column_title,
-        b.id as board_id,
-        b.name as board_name,
-        b.created_by as board_created_by,
-        b.department_id,
-        d.name as department_name,
-        d.admin_user_id as department_admin_user_id
-    FROM tasks t
-    JOIN columns c ON t.column_id = c.id
-    JOIN boards b ON c.board_id = b.id
-    LEFT JOIN departments d ON d.id = b.department_id
-    WHERE t.id = ?
-`, [taskId])).rows));
-
-const taskHasDependencyPath = async (fromTaskId: string, toTaskId: string, orgId: string): Promise<boolean> => {
-    const queue = [fromTaskId];
-    const visited = new Set<string>();
-    while (queue.length > 0) {
-        const currentId = queue.shift()!;
-        if (currentId === toTaskId) return true;
-        if (visited.has(currentId)) continue;
-        visited.add(currentId);
-        const children = asRows<{ child_task_id: string }>((await db.query(
-            'SELECT child_task_id FROM task_dependencies WHERE parent_task_id = ? AND org_id = ?',
-            [currentId, orgId]
-        )).rows);
-        for (const child of children) {
-            if (!visited.has(child.child_task_id)) queue.push(child.child_task_id);
-        }
-    }
-    return false;
-};
 
 const issueRegistrationVerificationToken = (email: string) =>
     jwt.sign(
@@ -439,11 +358,6 @@ const validateRegistrationVerificationToken = (token: string, email: string): bo
 
 export const requestEmailVerificationCode = async (req: Request, res: Response) => {
     const { email, purpose } = req.body;
-    console.log('[DEBUG] requestEmailVerificationCode called', {
-        email: typeof email === 'string' ? email.trim().toLowerCase() : undefined,
-        purpose: typeof purpose === 'string' ? purpose.trim().toLowerCase() : undefined,
-        env: { EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || 'unset', NODE_ENV: process.env.NODE_ENV, USE_TURSO: process.env.USE_TURSO }
-    });
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
     const normalizedPurpose = typeof purpose === 'string' ? purpose.trim().toLowerCase() : EMAIL_VERIFICATION_PURPOSE_REGISTER;
 
@@ -500,7 +414,7 @@ export const requestEmailVerificationCode = async (req: Request, res: Response) 
 
         return res.json(response);
     } catch (error) {
-        console.error('Email verification request failed:', error && (error instanceof Error ? error.stack || error.message : error));
+        console.error('Email verification request failed:', error);
         return res.status(500).json({ error: 'Failed to send verification code email' });
     }
 };
@@ -570,7 +484,7 @@ export const registerOrg = async (req: Request, res: Response) => {
     const parsed = orgRegistrationSchema.safeParse(req.body);
     if (!parsed.success) {
         console.warn('RegisterOrg validation failed:', parsed.error.format());
-        return res.status(400).json({ error: 'Invalid registration payload', details: (parsed.error as any).errors });
+        return res.status(400).json({ error: 'Invalid registration payload', details: parsed.error.issues });
     }
     const { orgName, userName, username, email, password, skills, location, verificationToken, phoneNumber } = parsed.data;
     const normalizedUsername = username.trim().toLowerCase();
@@ -581,7 +495,7 @@ export const registerOrg = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
     }
     if (SKIP_EMAIL_VERIFICATION) {
-        console.warn('SKIP_EMAIL_VERIFICATION is enabled — bypassing email verification for', normalizedEmail);
+        console.warn('[TEST MODE] Skipping email verification for registration of:', normalizedEmail);
     }
 
     // Check if email exists
@@ -604,7 +518,6 @@ export const registerOrg = async (req: Request, res: Response) => {
         const hashedPassword = bcrypt.hashSync(password, 10);
         const orgId = uuidv4();
         const userId = uuidv4();
-        const adminDepartmentId = uuidv4();
         console.log('Starting Transaction for Org:', orgId);
 
         // Transaction to create Org and User
@@ -616,11 +529,6 @@ export const registerOrg = async (req: Request, res: Response) => {
                 'INSERT INTO users (id, name, username, email, password_hash, org_id, role, phone_number, skills, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [userId, userName, normalizedUsername, normalizedEmail, hashedPassword, orgId, 'org_super_admin', req.body.phoneNumber || null, skills || null, location || null]
             );
-            console.log('Creating Admin department...');
-            await tx.execute(
-                'INSERT INTO departments (id, org_id, name, admin_user_id) VALUES (?, ?, ?, ?)',
-                [adminDepartmentId, orgId, 'Admin', userId]
-            );
         });
         console.log('Transaction Success');
 
@@ -629,11 +537,9 @@ export const registerOrg = async (req: Request, res: Response) => {
             success: true,
             orgId,
             userId,
-            adminDepartmentId,
             token,
             orgName,
-            user: { id: userId, name: userName, username: normalizedUsername, email: normalizedEmail, role: 'org_super_admin', skills: skills || null, location: location || null },
-            department: { id: adminDepartmentId, name: 'Admin', admin_user_id: userId }
+            user: { id: userId, name: userName, username: normalizedUsername, email: normalizedEmail, role: 'org_super_admin', skills: skills || null, location: location || null }
         });
 
     } catch (err: unknown) {
@@ -723,140 +629,6 @@ export const getAllOrgs = async (_req: Request, res: Response) => {
     }
 };
 
-// Departments
-export const createDepartment = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const parsed = createDepartmentSchema.safeParse(req.body);
-        if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', details: (parsed.error as any).errors });
-        const { name, adminUserId } = parsed.data;
-        const orgIdParam = String(req.params.orgId || req.body.orgId || req.user.orgId);
-        if (!canAccessOrg(req.user, orgIdParam)) return res.status(403).json({ error: 'Forbidden' });
-        // ensure admin user (if provided) belongs to the org
-        if (adminUserId) {
-            const u = await db.query('SELECT id FROM users WHERE id = ? AND org_id = ?', [adminUserId, orgIdParam]);
-            if (u.rows.length === 0) return res.status(400).json({ error: 'Admin user not found in org' });
-        }
-        const id = uuidv4();
-        await db.execute('INSERT INTO departments (id, org_id, name, admin_user_id) VALUES (?, ?, ?, ?)', [id, orgIdParam, name, adminUserId || null]);
-        res.json({ success: true, id, name, orgId: orgIdParam, adminUserId: adminUserId || null, admin_user_id: adminUserId || null });
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        res.status(500).json({ error: message });
-    }
-};
-
-export const getDepartmentsForOrg = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-        const orgId = String(req.params.orgId);
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        if (!canAccessOrg(req.user, orgId)) return res.status(403).json({ error: 'Forbidden' });
-        const rows = asRows<{ id: string; name: string; admin_user_id?: string }>((await db.query('SELECT id, name, admin_user_id FROM departments WHERE org_id = ?', [orgId])).rows);
-        res.json({ success: true, departments: rows });
-    } catch (err: unknown) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-    }
-};
-
-export const getDepartment = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-        const id = String(req.params.id);
-        const row = first(asRows<{ id: string; name: string; org_id: string; admin_user_id?: string }>((await db.query('SELECT id, name, org_id, admin_user_id FROM departments WHERE id = ?', [id])).rows));
-        if (!row) return res.status(404).json({ error: 'Department not found' });
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        if (!canAccessOrg(req.user, row.org_id)) return res.status(403).json({ error: 'Forbidden' });
-        res.json({ success: true, department: row });
-    } catch (err: unknown) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-    }
-};
-
-export const updateDepartment = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-        const id = String(req.params.id);
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const existing = first(asRows<{ id: string; org_id: string }>((await db.query('SELECT id, org_id FROM departments WHERE id = ?', [id])).rows));
-        if (!existing) return res.status(404).json({ error: 'Department not found' });
-        if (!canAccessOrg(req.user, existing.org_id)) return res.status(403).json({ error: 'Forbidden' });
-        const parsed = updateDepartmentSchema.safeParse(req.body);
-        if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', details: (parsed.error as any).errors });
-        const { name, adminUserId } = parsed.data;
-        if (adminUserId) {
-            const u = await db.query('SELECT id FROM users WHERE id = ? AND org_id = ?', [adminUserId, existing.org_id]);
-            if (u.rows.length === 0) return res.status(400).json({ error: 'Admin user not found in org' });
-        }
-        await db.execute('UPDATE departments SET name = COALESCE(?, name), admin_user_id = ? WHERE id = ?', [name || null, adminUserId || null, id]);
-        res.json({ success: true });
-    } catch (err: unknown) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-    }
-};
-
-export const deleteDepartment = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-        const id = String(req.params.id);
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const existing = first(asRows<{ id: string; org_id: string }>((await db.query('SELECT id, org_id FROM departments WHERE id = ?', [id])).rows));
-        if (!existing) return res.status(404).json({ error: 'Department not found' });
-        if (!canAccessOrg(req.user, existing.org_id)) return res.status(403).json({ error: 'Forbidden' });
-        // Unassign department_id from boards, delete department
-        await db.transaction(async (tx: DatabaseAdapter) => {
-            await tx.execute('UPDATE boards SET department_id = NULL WHERE department_id = ?', [id]);
-            await tx.execute('DELETE FROM departments WHERE id = ?', [id]);
-        });
-        res.json({ success: true });
-    } catch (err: unknown) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-    }
-};
-
-export const getDepartmentBoards = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-        const id = String(req.params.id);
-        const dept = first(asRows<{ id: string; org_id: string }>((await db.query('SELECT id, org_id FROM departments WHERE id = ?', [id])).rows));
-        if (!dept) return res.status(404).json({ error: 'Department not found' });
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
-        const boards = asRows<ReportingBoardRow>((await db.query('SELECT id, name, created_at, created_by, followers, is_public, archived FROM boards WHERE department_id = ?', [id])).rows);
-        res.json({ success: true, boards });
-    } catch (err: unknown) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-    }
-};
-
-// Centralized org view that aggregates all departmental boards and their tasks
-export const getOrganizationCentralView = async (req: AuthenticatedRequest, res: Response) => {
-    try {
-        const orgId = String(req.params.orgId);
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        if (!canAccessOrg(req.user, orgId)) return res.status(403).json({ error: 'Forbidden' });
-        const boards = asRows<ReportingBoardRow>((await db.query(`
-            SELECT b.id, b.name, b.created_at, b.created_by, b.followers, b.is_public, b.archived, b.department_id, d.name as department_name
-            FROM boards b
-            LEFT JOIN departments d ON d.id = b.department_id
-            WHERE b.org_id = ?
-        `, [orgId])).rows);
-        const result: any[] = [];
-        for (const b of boards) {
-            const cols = asRows<{ id: string; title: string; order_index: number }>((await db.query('SELECT id, title, order_index FROM columns WHERE board_id = ? ORDER BY order_index ASC', [b.id])).rows);
-            const columnsWithTasks: any[] = [];
-            for (const col of cols) {
-                const tasks = asRows<ReportingTaskRow>((await db.query(`
-                    SELECT t.id, t.title, t.assigned_to, t.interested_users, t.due_date, t.completed_at, t.created_at, t.archived, t.project_location, t.priority_score, t.urgency, c.title as column_title
-                    FROM tasks t
-                    JOIN columns c ON c.id = t.column_id
-                    WHERE t.column_id = ?
-                `, [col.id])).rows);
-                columnsWithTasks.push({ ...col, tasks });
-            }
-            result.push({ board: b, columns: columnsWithTasks });
-        }
-        res.json({ success: true, boards: result });
-    } catch (err: unknown) {
-        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
-    }
-};
-
 export const getAllUsers = async (_req: Request, res: Response) => {
     try {
         const users = (await db.query(`
@@ -874,15 +646,30 @@ export const getAllUsers = async (_req: Request, res: Response) => {
 };
 
 export const login = async (req: Request, res: Response) => {
-    const { email, identifier, password } = req.body;
-    const normalizedIdentifier = typeof identifier === 'string'
-        ? identifier.trim().toLowerCase()
+    console.log('[LOGIN] Request body:', JSON.stringify(req.body));
+    // Support both { email } and { identifier } for backwards compatibility
+    const { email, identifier: rawIdentifier, password } = req.body;
+    
+    console.log('[LOGIN] Full body:', req.body);
+    console.log('[LOGIN] Parsed values:', { 
+        hasEmail: !!email, 
+        hasIdentifier: !!rawIdentifier, 
+        hasPassword: !!password,
+        emailValue: email,
+        identifierValue: rawIdentifier
+    });
+    
+    const normalizedIdentifier = typeof rawIdentifier === 'string'
+        ? rawIdentifier.trim().toLowerCase()
         : typeof email === 'string'
             ? email.trim().toLowerCase()
             : '';
 
+    console.log('[LOGIN] Normalized identifier:', normalizedIdentifier);
+    
     // Validate input with Zod
-    const validation = loginSchema.safeParse({ email: normalizedIdentifier, password });
+    const validation = loginSchema.safeParse({ identifier: normalizedIdentifier, password });
+    console.log('[LOGIN] Validation result:', validation.success ? 'success' : validation.error.issues);
     if (!validation.success) {
         return res.status(400).json({ error: validation.error.issues[0].message });
     }
@@ -890,11 +677,6 @@ export const login = async (req: Request, res: Response) => {
     if (!normalizedIdentifier || typeof password !== 'string' || !password) {
         return res.status(400).json({ error: 'Email/username and password are required' });
     }
-
-    console.log('[DEBUG] login attempt', {
-        identifier: normalizedIdentifier,
-        env: { JWT_SECRET: Boolean(process.env.JWT_SECRET), DATABASE_URL: Boolean(process.env.DATABASE_URL), USE_TURSO: process.env.USE_TURSO }
-    });
 
     try {
         const user = first(asRows<{
@@ -946,7 +728,7 @@ export const login = async (req: Request, res: Response) => {
             user: { id: user.id, name: user.name, username: user.username, email: user.email, role: user.role, lastBoardId: user.last_board_id, skills: user.skills, location: user.location }
         });
     } catch (err: unknown) {
-        console.error('Login handler error:', err && (err instanceof Error ? err.stack || err.message : err));
+        console.error(err);
         res.status(500).json({ error: 'Login failed' });
     }
 };
@@ -1016,11 +798,8 @@ export const registerUser = async (req: Request, res: Response) => {
     if (!normalizedEmail || !normalizedUsername || !password || !userName || !orgId || !verificationToken) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
-    if (!SKIP_EMAIL_VERIFICATION && !validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
+    if (!validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
-    }
-    if (SKIP_EMAIL_VERIFICATION) {
-        console.warn('SKIP_EMAIL_VERIFICATION is enabled — bypassing email verification for', normalizedEmail);
     }
 
     try {
@@ -1149,7 +928,7 @@ export const createBoard = async (req: AuthenticatedRequest, res: Response) => {
     //     return res.status(403).json({ error: 'Only admins can create boards' });
     // }
 
-    const { name, orgId, isPublic, departmentId } = req.body;
+    const { name, orgId, isPublic } = req.body;
     const userId = req.user?.userId;
     const user = req.user;
     const id = uuidv4();
@@ -1162,8 +941,8 @@ export const createBoard = async (req: AuthenticatedRequest, res: Response) => {
         }
         // Auto-follow the creator
         const followers = userId ? userId : '';
-        await db.execute('INSERT INTO boards (id, name, org_id, created_by, followers, is_public, department_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [id, finalName, orgId, userId || null, followers, isPublic ? 1 : 0, departmentId || null]);
+        await db.execute('INSERT INTO boards (id, name, org_id, created_by, followers, is_public) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, finalName, orgId, userId || null, followers, isPublic ? 1 : 0]);
 
         // Create default columns
         const cols = [
@@ -1180,7 +959,7 @@ export const createBoard = async (req: AuthenticatedRequest, res: Response) => {
         }
 
         const boardRow = first((await db.query(
-            'SELECT id, name, org_id, created_by, followers, is_public, department_id, created_at FROM boards WHERE id = ?',
+            'SELECT id, name, org_id, created_by, followers, is_public, created_at FROM boards WHERE id = ?',
             [id]
         )).rows);
         if (boardRow) {
@@ -1191,11 +970,10 @@ export const createBoard = async (req: AuthenticatedRequest, res: Response) => {
                 created_by: boardRow.created_by,
                 followers: boardRow.followers,
                 is_public: boardRow.is_public,
-                department_id: boardRow.department_id || null,
                 created_at: boardRow.created_at
             });
         }
-        return res.json({ id, name: finalName, orgId, created_by: userId, followers, is_public: isPublic ? 1 : 0, department_id: departmentId || null });
+        return res.json({ id, name: finalName, orgId, created_by: userId, followers, is_public: isPublic ? 1 : 0 });
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         res.status(500).json({ error: message });
@@ -1292,22 +1070,6 @@ export const getBoard = async (req: AuthenticatedRequest, res: Response) => {
                 : 'SELECT * FROM tasks WHERE column_id = ? AND (archived = 0 OR archived IS NULL) ORDER BY priority_score DESC';
 
             const tasks = asRows<Record<string, unknown>>((await db.query(query, [col.id])).rows);
-            
-            // Batch fetch dependencies for all tasks in this column for better performance? 
-            // For now, doing it per task for simplicity, but could be optimized.
-            for (const task of tasks) {
-                const blockers = (await db.query(`
-                    SELECT pt.id, pt.title, pt.completed_at, pc.title as column_title
-                    FROM task_dependencies td
-                    JOIN tasks pt ON td.parent_task_id = pt.id
-                    JOIN columns pc ON pt.column_id = pc.id
-                    WHERE td.child_task_id = ?
-                `, [task.id])).rows;
-                
-                const activeBlockers = blockers.filter(p => !((p as any).completed_at || isDoneColumnTitle(String((p as any).column_title))));
-                (task as any).blocked_by = activeBlockers.map(p => ({ id: (p as any).id, title: (p as any).title }));
-            }
-
             columnsWithTasks.push({ ...col, tasks });
         }
 
@@ -1318,59 +1080,10 @@ export const getBoard = async (req: AuthenticatedRequest, res: Response) => {
     }
 };
 
-async function handleTaskCompletionDependencies(taskId: string, orgId: string) {
-    try {
-        // Find all tasks that depend on this one
-        const childDeps = (await db.query('SELECT child_task_id FROM task_dependencies WHERE parent_task_id = ?', [taskId])).rows;
-
-        for (const dep of childDeps) {
-            const childTaskId = String((dep as any).child_task_id);
-
-            // Check if all parents of this child are done
-            const parents = (await db.query(`
-                SELECT t.id, t.completed_at, c.title as column_title
-                FROM task_dependencies td
-                JOIN tasks t ON td.parent_task_id = t.id
-                JOIN columns c ON t.column_id = c.id
-                WHERE td.child_task_id = ?
-            `, [childTaskId])).rows;
-
-            const allParentsDone = parents.every(p => (p as any).completed_at || isDoneColumnTitle(String((p as any).column_title)));
-
-            if (allParentsDone) {
-                // Get child task details
-                const childTask = await getChainTaskRow(childTaskId);
-                if (!childTask) continue;
-
-                const message = `Dependency met: "${childTask.title}" is now ready to start! All parent tasks have been completed.`;
-                const userIds = new Set<string>(parseCsvIds(childTask.interested_users));
-                if (childTask.assigned_to) userIds.add(childTask.assigned_to);
-                if (childTask.board_created_by) userIds.add(childTask.board_created_by);
-                if (childTask.department_admin_user_id) userIds.add(childTask.department_admin_user_id);
-
-                for (const userId of userIds) {
-                    const recipient = first(asRows<NotificationRecipient>((await db.query(
-                        'SELECT id, email, phone_number, name FROM users WHERE id = ? AND org_id = ?',
-                        [userId, orgId]
-                    )).rows));
-                    if (recipient) await sendNotification(recipient, message, 'dependency_ready');
-                }
-            }
-        }
-    } catch (err) {
-        console.error('Failed to handle task dependencies:', err);
-    }
-}
-
 export const moveTask = async (req: AuthenticatedRequest, res: Response) => {
     const { taskId, targetColumnId } = req.body;
     try {
         if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        // Validate input shape after authentication
-        const parsed = moveTaskSchema.safeParse(req.body);
-        if (!parsed.success) {
-            return res.status(400).json({ error: 'Invalid request payload', details: (parsed.error as any).errors });
-        }
         const taskScope = await getTaskScope(taskId);
         if (!taskScope) return res.status(404).json({ error: 'Task not found' });
         if (!canAccessOrg(req.user, taskScope.org_id)) {
@@ -1383,22 +1096,7 @@ export const moveTask = async (req: AuthenticatedRequest, res: Response) => {
         `, [taskId])).rows));
         if (!taskMeta) return res.status(404).json({ error: 'Task not found' });
 
-        // tolerant parsing: accept JSON array, CSV string, or null
-        const parseInterestedUsers = (raw?: string | null): string[] => {
-            if (!raw) return [];
-            const trimmed = raw.trim();
-            // JSON array
-            if (trimmed.startsWith('[')) {
-                try {
-                    const parsed = JSON.parse(trimmed);
-                    if (Array.isArray(parsed)) return parsed.map(String).map(s => s.trim()).filter(Boolean);
-                } catch { /* fallthrough to CSV */ }
-            }
-            // CSV fallback
-            return parseCsvIds(raw);
-        };
-
-        const isTaskInterested = parseInterestedUsers(taskMeta.interested_users).includes(req.user.userId);
+        const isTaskInterested = parseCsvIds(taskMeta.interested_users).includes(req.user.userId);
         const privilegedUser = isPrivileged(req.user.role);
 
         if (!privilegedUser && !isTaskInterested) {
@@ -1419,12 +1117,6 @@ export const moveTask = async (req: AuthenticatedRequest, res: Response) => {
         const targetColumn = first(asRows<{ title: string }>((await db.query('SELECT title FROM columns WHERE id = ?', [targetColumnId])).rows));
         const completedAt = targetColumn && isDoneColumnTitle(targetColumn.title) ? new Date().toISOString() : null;
         await db.execute('UPDATE tasks SET column_id = ?, completed_at = ? WHERE id = ?', [targetColumnId, completedAt, taskId]);
-
-        if (completedAt) {
-            // Trigger dependency checks asynchronously
-            handleTaskCompletionDependencies(taskId, taskScope.org_id).catch(err => console.error('Dependency Trigger Error:', err));
-        }
-
         res.json({ success: true, taskId, targetColumnId });
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1690,6 +1382,116 @@ export const deleteTask = async (req: AuthenticatedRequest, res: Response) => {
     }
 };
 
+// Departments CRUD
+export const createDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const { name } = req.body;
+    const orgId = req.user?.orgId;
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!orgId) return res.status(400).json({ error: 'No organization found' });
+    if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'Department name is required' });
+    }
+    try {
+        const existing = await db.query('SELECT id FROM departments WHERE org_id = ? AND LOWER(name) = ?', [orgId, name.trim().toLowerCase()]);
+        if (existing.rows.length > 0) {
+            return res.status(409).json({ error: 'Department already exists' });
+        }
+        const id = uuidv4();
+        await db.execute('INSERT INTO departments (id, org_id, name, admin_user_id) VALUES (?, ?, ?, ?)', [id, orgId, name.trim(), req.user.userId]);
+        res.json({ id, name: name.trim(), admin_user_id: req.user.userId });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const getDepartmentsForOrg = async (req: AuthenticatedRequest, res: Response) => {
+    const orgId = String(req.params.orgId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!canAccessOrg(req.user, orgId)) return res.status(403).json({ error: 'Forbidden' });
+    try {
+        const result = await db.query(`
+            SELECT d.id, d.name, d.admin_user_id, u.name as admin_name,
+                   (SELECT COUNT(*) FROM boards WHERE department_id = d.id) as board_count
+            FROM departments d
+            LEFT JOIN users u ON d.admin_user_id = u.id
+            WHERE d.org_id = ?
+            ORDER BY d.name
+        `, [orgId]);
+        res.json({ departments: result.rows });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const getDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        res.json(dept);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const updateDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    const { name } = req.body;
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        if (req.user.role !== 'admin' && req.user.role !== 'org_super_admin' && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Only admins can update departments' });
+        }
+        await db.execute('UPDATE departments SET name = ? WHERE id = ?', [name?.trim() || dept.name, deptId]);
+        res.json({ success: true });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const deleteDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        if (req.user.role !== 'admin' && req.user.role !== 'org_super_admin' && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Only admins can delete departments' });
+        }
+        await db.execute('UPDATE boards SET department_id = NULL WHERE department_id = ?', [deptId]);
+        await db.execute('DELETE FROM departments WHERE id = ?', [deptId]);
+        res.json({ success: true });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
+export const getDepartmentBoards = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const dept = first(asRows<any>((await db.query('SELECT * FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (!canAccessOrg(req.user, dept.org_id)) return res.status(403).json({ error: 'Forbidden' });
+        const boards = await db.query('SELECT * FROM boards WHERE department_id = ? ORDER BY created_at DESC', [deptId]);
+        res.json({ boards: boards.rows });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        res.status(500).json({ error: message });
+    }
+};
+
 export const getBoards = async (req: AuthenticatedRequest, res: Response) => {
     const orgId = String(req.params.orgId);
     try {
@@ -1719,9 +1521,6 @@ export const getBoards = async (req: AuthenticatedRequest, res: Response) => {
 export const getReportingOverview = async (req: AuthenticatedRequest, res: Response) => {
     const orgId = String(req.params.orgId);
     const weekStartInput = typeof req.query.weekStart === 'string' ? req.query.weekStart : undefined;
-    const requestedDepartmentId = typeof req.query.departmentId === 'string' && req.query.departmentId.trim()
-        ? req.query.departmentId.trim()
-        : null;
     const user = req.user;
 
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
@@ -1736,34 +1535,14 @@ export const getReportingOverview = async (req: AuthenticatedRequest, res: Respo
 
         const users = asRows<{ id: string; name: string }>((await db.query('SELECT id, name FROM users WHERE org_id = ?', [orgId])).rows);
         const userNameById = new Map<string, string>(users.map((row) => [row.id, row.name]));
-        const departments = asRows<{ id: string; name: string; admin_user_id?: string | null }>((await db.query(
-            'SELECT id, name, admin_user_id FROM departments WHERE org_id = ?',
-            [orgId]
-        )).rows);
-        const departmentById = new Map(departments.map((department) => [department.id, department]));
-        const userDepartmentIds = departments
-            .filter((department) => department.admin_user_id === user.userId)
-            .map((department) => department.id);
 
-        if (requestedDepartmentId && !departmentById.has(requestedDepartmentId)) {
-            return res.status(404).json({ error: 'Department not found' });
-        }
-
-        if (requestedDepartmentId && !isPrivileged(user.role) && !userDepartmentIds.includes(requestedDepartmentId)) {
-            return res.status(403).json({ error: 'Access denied for this department' });
-        }
-
-        const boardParams = requestedDepartmentId ? [orgId, requestedDepartmentId] : [orgId];
-        const departmentFilterSql = requestedDepartmentId ? 'AND b.department_id = ?' : '';
         const orgBoards = asRows<ReportingBoardRow>((await db.query(`
-            SELECT b.id, b.name, b.created_at, b.created_by, b.followers, b.is_public, b.archived, b.department_id, d.name as department_name, u.name as creator_name
+            SELECT b.id, b.name, b.created_at, b.created_by, b.followers, b.is_public, b.archived, u.name as creator_name
             FROM boards b
             LEFT JOIN users u ON b.created_by = u.id
-            LEFT JOIN departments d ON d.id = b.department_id
             WHERE b.org_id = ?
-            ${departmentFilterSql}
             ORDER BY b.created_at DESC
-        `, boardParams)).rows);
+        `, [orgId])).rows);
 
         const publicBoards = (await db.query(`
             SELECT b.id, b.name, b.created_at, b.org_id, o.name as org_name, u.name as creator_name
@@ -1900,8 +1679,6 @@ export const getReportingOverview = async (req: AuthenticatedRequest, res: Respo
                     id: task.id,
                     board_id: board.id,
                     board_name: board.name,
-                    department_id: board.department_id || null,
-                    department_name: board.department_name || null,
                     title: task.title,
                     status,
                     due_date: task.due_date ? isoDate(new Date(task.due_date)) : null,
@@ -1924,8 +1701,6 @@ export const getReportingOverview = async (req: AuthenticatedRequest, res: Respo
 
         res.json({
             orgId,
-            department_id: requestedDepartmentId,
-            department_name: requestedDepartmentId ? departmentById.get(requestedDepartmentId)?.name || null : null,
             week_start: isoDate(weekStart),
             week_end: isoDate(weekEnd),
             active_projects: activeProjects,
@@ -2571,9 +2346,6 @@ export const updateBoard = async (req: AuthenticatedRequest, res: Response) => {
         }
         if (followers !== undefined) {
             await db.execute('UPDATE boards SET followers = ? WHERE id = ?', [followers, id]);
-        }
-        if (req.body.departmentId !== undefined) {
-            await db.execute('UPDATE boards SET department_id = ? WHERE id = ?', [req.body.departmentId || null, id]);
         }
         if (req.body.isPublic !== undefined) {
             await db.execute('UPDATE boards SET is_public = ? WHERE id = ?', [req.body.isPublic ? 1 : 0, id]);
@@ -3340,256 +3112,5 @@ export const resetPassword = async (req: Request, res: Response) => {
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Failed to reset password' });
-    }
-};
-
-// Task Dependencies
-export const getTaskChain = async (req: AuthenticatedRequest, res: Response) => {
-    const taskId = String(req.params.taskId);
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const taskScope = await getTaskScope(taskId);
-        if (!taskScope) return res.status(404).json({ error: 'Task not found' });
-        if (!canAccessOrg(req.user, taskScope.org_id)) return res.status(403).json({ error: 'Forbidden' });
-
-        // Recursively find all ancestors and descendants
-        const tasksMap = new Map<string, any>();
-        const dependencies: any[] = [];
-        const processedTasks = new Set<string>();
-
-        const queue = [taskId];
-        while (queue.length > 0) {
-            const currentId = queue.shift()!;
-            if (processedTasks.has(currentId)) continue;
-            processedTasks.add(currentId);
-
-            // Fetch task details
-            const task = await getChainTaskRow(currentId);
-            
-            if (task) {
-                const estimatedHours = parseDurationHours(task.project_duration);
-                tasksMap.set(currentId, {
-                    ...task,
-                    is_done: !!task.completed_at || isDoneColumnTitle(String(task.column_title)),
-                    priority_score: Number(task.priority_score) || Number(task.urgency) || 0,
-                    estimated_hours: estimatedHours,
-                    estimated_duration_label: estimatedHours ? formatDurationDays(estimatedHours) : null
-                });
-            }
-
-            // Fetch parent dependencies
-            const parents = (await db.query('SELECT parent_task_id, id FROM task_dependencies WHERE child_task_id = ?', [currentId])).rows;
-            for (const p of parents) {
-                dependencies.push({ id: (p as any).id, from: (p as any).parent_task_id, to: currentId });
-                queue.push((p as any).parent_task_id);
-            }
-
-            // Fetch child dependencies
-            const children = (await db.query('SELECT child_task_id, id FROM task_dependencies WHERE parent_task_id = ?', [currentId])).rows;
-            for (const c of children) {
-                dependencies.push({ id: (c as any).id, from: currentId, to: (c as any).child_task_id });
-                queue.push((c as any).child_task_id);
-            }
-        }
-
-        // Deduplicate dependencies
-        const uniqueDeps = Array.from(new Map(dependencies.map(d => [d.id, d])).values());
-        const chainTasks = Array.from(tasksMap.values());
-        const chainTaskIds = new Set(chainTasks.map((task) => task.id));
-        const incomingCount = new Map<string, number>();
-        const earliestFinishHours = new Map<string, number>();
-        chainTasks.forEach((task) => incomingCount.set(task.id, 0));
-        uniqueDeps.forEach((dep) => {
-            if (chainTaskIds.has(dep.to)) {
-                incomingCount.set(dep.to, (incomingCount.get(dep.to) || 0) + 1);
-            }
-        });
-        const queueForEta = chainTasks.filter((task) => (incomingCount.get(task.id) || 0) === 0).map((task) => task.id);
-        for (const task of chainTasks) {
-            if ((incomingCount.get(task.id) || 0) === 0) {
-                earliestFinishHours.set(task.id, Number(task.estimated_hours) || 0);
-            }
-        }
-        while (queueForEta.length > 0) {
-            const currentId = queueForEta.shift()!;
-            const currentFinish = earliestFinishHours.get(currentId) || 0;
-            const children = uniqueDeps.filter((dep) => dep.from === currentId && chainTaskIds.has(dep.to));
-            for (const dep of children) {
-                const child = tasksMap.get(dep.to);
-                const candidate = currentFinish + (Number(child?.estimated_hours) || 0);
-                earliestFinishHours.set(dep.to, Math.max(earliestFinishHours.get(dep.to) || 0, candidate));
-                incomingCount.set(dep.to, (incomingCount.get(dep.to) || 1) - 1);
-                if ((incomingCount.get(dep.to) || 0) === 0) queueForEta.push(dep.to);
-            }
-        }
-        const totalEstimatedHours = Math.max(0, ...Array.from(earliestFinishHours.values()));
-        const departmentsMap = new Map<string, { id: string | null; name: string; adminUserId: string | null; taskCount: number }>();
-        chainTasks.forEach((task) => {
-            const key = task.department_id || 'unassigned';
-            const existing = departmentsMap.get(key) || {
-                id: task.department_id || null,
-                name: task.department_name || 'Unassigned',
-                adminUserId: task.department_admin_user_id || null,
-                taskCount: 0
-            };
-            existing.taskCount += 1;
-            departmentsMap.set(key, existing);
-        });
-
-        res.json({
-            tasks: chainTasks,
-            edges: uniqueDeps,
-            departments: Array.from(departmentsMap.values()),
-            estimatedTotalHours: totalEstimatedHours,
-            estimatedTotalLabel: totalEstimatedHours ? formatDurationDays(totalEstimatedHours) : null,
-            missingDurationTaskIds: chainTasks.filter((task) => !task.estimated_hours).map((task) => task.id)
-        });
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        res.status(500).json({ error: message });
-    }
-};
-
-export const createTaskDependency = async (req: AuthenticatedRequest, res: Response) => {
-    const { parentTaskId, childTaskId } = req.body;
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const parentScope = await getTaskScope(parentTaskId);
-        if (!parentScope) return res.status(404).json({ error: 'Parent task not found' });
-        const childScope = await getTaskScope(childTaskId);
-        if (!childScope) return res.status(404).json({ error: 'Child task not found' });
-        if (parentScope.org_id !== childScope.org_id) return res.status(400).json({ error: 'Tasks must be in the same organization' });
-        if (!canAccessOrg(req.user, parentScope.org_id)) return res.status(403).json({ error: 'Forbidden' });
-        if (parentTaskId === childTaskId) return res.status(400).json({ error: 'Cannot create dependency on self' });
-
-        const duplicate = first((await db.query('SELECT id FROM task_dependencies WHERE parent_task_id = ? AND child_task_id = ?', [parentTaskId, childTaskId])).rows);
-        if (duplicate) return res.status(409).json({ error: 'Dependency already exists' });
-
-        const parentTask = await getChainTaskRow(parentTaskId);
-        const childTask = await getChainTaskRow(childTaskId);
-        const parentDurationHours = parseDurationHours(parentTask?.project_duration);
-        const childDurationHours = parseDurationHours(childTask?.project_duration);
-        if (!parentDurationHours || !childDurationHours) {
-            return res.status(400).json({ error: 'Linked tasks require realistic estimated durations, e.g. "2 hours", "3 days", or "1 week".' });
-        }
-
-        const createsCycle = await taskHasDependencyPath(childTaskId, parentTaskId, parentScope.org_id);
-        if (createsCycle) return res.status(400).json({ error: 'Circular dependency detected' });
-
-        const id = uuidv4();
-        await db.execute('INSERT INTO task_dependencies (id, parent_task_id, child_task_id, org_id) VALUES (?, ?, ?, ?)', [id, parentTaskId, childTaskId, parentScope.org_id]);
-        res.json({ success: true, id });
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        res.status(500).json({ error: message });
-    }
-};
-
-export const getTaskDependencies = async (req: AuthenticatedRequest, res: Response) => {
-    const taskId = String(req.params.taskId);
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const taskScope = await getTaskScope(taskId);
-        if (!taskScope) return res.status(404).json({ error: 'Task not found' });
-        if (!canAccessOrg(req.user, taskScope.org_id)) return res.status(403).json({ error: 'Forbidden' });
-
-        const dependencies = (await db.query(`
-            SELECT td.id, td.parent_task_id, td.child_task_id, td.created_at,
-                   pt.title as parent_title, ct.title as child_title,
-                   pb.name as parent_board, cb.name as child_board
-            FROM task_dependencies td
-            JOIN tasks pt ON td.parent_task_id = pt.id
-            JOIN tasks ct ON td.child_task_id = ct.id
-            JOIN columns pc ON pt.column_id = pc.id
-            JOIN columns cc ON ct.column_id = cc.id
-            JOIN boards pb ON pc.board_id = pb.id
-            JOIN boards cb ON cc.board_id = cb.id
-            WHERE (td.parent_task_id = ? OR td.child_task_id = ?) AND td.org_id = ?
-        `, [taskId, taskId, taskScope.org_id])).rows;
-        res.json({ success: true, dependencies });
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        res.status(500).json({ error: message });
-    }
-};
-
-export const alertTaskChainDepartments = async (req: AuthenticatedRequest, res: Response) => {
-    const taskId = String(req.params.taskId);
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const taskScope = await getTaskScope(taskId);
-        if (!taskScope) return res.status(404).json({ error: 'Task not found' });
-        if (!canAccessOrg(req.user, taskScope.org_id)) return res.status(403).json({ error: 'Forbidden' });
-
-        const tasksMap = new Map<string, ChainTaskRow>();
-        const processedTasks = new Set<string>();
-        const queue = [taskId];
-        while (queue.length > 0) {
-            const currentId = queue.shift()!;
-            if (processedTasks.has(currentId)) continue;
-            processedTasks.add(currentId);
-            const task = await getChainTaskRow(currentId);
-            if (task) tasksMap.set(currentId, task);
-            const parents = asRows<{ parent_task_id: string }>((await db.query(
-                'SELECT parent_task_id FROM task_dependencies WHERE child_task_id = ? AND org_id = ?',
-                [currentId, taskScope.org_id]
-            )).rows);
-            const children = asRows<{ child_task_id: string }>((await db.query(
-                'SELECT child_task_id FROM task_dependencies WHERE parent_task_id = ? AND org_id = ?',
-                [currentId, taskScope.org_id]
-            )).rows);
-            parents.forEach((parent) => queue.push(parent.parent_task_id));
-            children.forEach((child) => queue.push(child.child_task_id));
-        }
-
-        const chainTasks = Array.from(tasksMap.values());
-        const recipientIds = new Set<string>();
-        const departmentNames = new Set<string>();
-        for (const task of chainTasks) {
-            if (task.department_name) departmentNames.add(task.department_name);
-            if (task.department_admin_user_id) recipientIds.add(task.department_admin_user_id);
-            if (task.assigned_to) recipientIds.add(task.assigned_to);
-            if (task.board_created_by) recipientIds.add(task.board_created_by);
-            parseCsvIds(task.interested_users).forEach((id) => recipientIds.add(id));
-        }
-
-        const sourceTask = tasksMap.get(taskId);
-        const message = `Workflow chain alert: "${sourceTask?.title || 'A task'}" is linked across ${departmentNames.size || 1} department(s): ${Array.from(departmentNames).join(', ') || 'Unassigned'}. Review dependencies and estimated completion timing.`;
-        let notifiedCount = 0;
-        for (const recipientId of recipientIds) {
-            const recipient = first(asRows<NotificationRecipient>((await db.query(
-                'SELECT id, email, phone_number, name FROM users WHERE id = ? AND org_id = ?',
-                [recipientId, taskScope.org_id]
-            )).rows));
-            if (recipient) {
-                await sendNotification(recipient, message, 'dependency_chain_alert');
-                notifiedCount += 1;
-            }
-        }
-
-        res.json({
-            success: true,
-            notifiedCount,
-            departments: Array.from(departmentNames),
-            taskCount: chainTasks.length
-        });
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        res.status(500).json({ error: message });
-    }
-};
-
-export const deleteTaskDependency = async (req: AuthenticatedRequest, res: Response) => {
-    const id = String(req.params.id);
-    try {
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-        const dep = first((await db.query('SELECT id, org_id FROM task_dependencies WHERE id = ?', [id])).rows);
-        if (!dep) return res.status(404).json({ error: 'Dependency not found' });
-        if (!canAccessOrg(req.user, String((dep as any).org_id))) return res.status(403).json({ error: 'Forbidden' });
-        await db.execute('DELETE FROM task_dependencies WHERE id = ?', [id]);
-        res.json({ success: true });
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        res.status(500).json({ error: message });
     }
 };

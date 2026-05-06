@@ -1,32 +1,18 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode, createDepartment, getDepartmentsForOrg, getDepartment, updateDepartment, deleteDepartment, getDepartmentBoards, getOrganizationCentralView, createTaskDependency, getTaskDependencies, deleteTaskDependency, getTaskChain, alertTaskChainDepartments } from './controllers.js';
+import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode, createDepartment, getDepartmentsForOrg, getDepartment, updateDepartment, deleteDepartment, getDepartmentBoards } from './controllers.js';
 import { authenticateToken, requireSuperAdmin, loginRateLimiter, passwordResetRateLimiter, translateRateLimiter } from './middleware.js';
-import db from './db.js';
 
 export const router = Router();
 
-router.get('/health', async (_req: Request, res: Response) => {
-    try {
-        await db.query('SELECT 1');
-        const envStatus = {
-            JWT_SECRET: !!process.env.JWT_SECRET,
-            SUPER_ADMIN_SECRET: !!process.env.SUPER_ADMIN_SECRET,
-            DATABASE_URL: !!process.env.DATABASE_URL,
-            SKIP_EMAIL_VERIFICATION: !!process.env.SKIP_EMAIL_VERIFICATION,
-        };
-        res.json({ status: 'ok', database: 'connected', env: envStatus });
-    } catch (err: any) {
-        res.status(500).json({ status: 'error', database: 'disconnected', message: err.message });
-    }
+router.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok' });
 });
 
 // Auth & Org
 router.post('/orgs/register', registerOrg);
 router.get('/orgs/lookup', findOrg);
 router.get('/orgs/search', searchOrgs);
-router.post('/orgs/:orgId/departments', authenticateToken, createDepartment);
-router.get('/orgs/:orgId/departments', authenticateToken, getDepartmentsForOrg);
 router.post('/auth/login', loginRateLimiter, login);
 router.post('/auth/register', registerUser);
 router.post('/auth/email-verification/request', requestEmailVerificationCode);
@@ -55,6 +41,14 @@ router.put('/orgs/:orgId/weekly-objective', authenticateToken, upsertWeeklyObjec
 router.post('/orgs/:orgId/super-admin/promote/request', authenticateToken, requestOrgSuperAdminPromotion);
 router.post('/orgs/:orgId/super-admin/promote/confirm', authenticateToken, confirmOrgSuperAdminPromotion);
 
+// Departments
+router.post('/orgs/:orgId/departments', authenticateToken, createDepartment);
+router.get('/orgs/:orgId/departments', authenticateToken, getDepartmentsForOrg);
+router.get('/departments/:deptId', authenticateToken, getDepartment);
+router.put('/departments/:deptId', authenticateToken, updateDepartment);
+router.delete('/departments/:deptId', authenticateToken, deleteDepartment);
+router.get('/departments/:deptId/boards', authenticateToken, getDepartmentBoards);
+
 router.post('/tasks', authenticateToken, createTask);
 router.put('/tasks/:id', authenticateToken, updateTask);
 router.get('/tasks/:id/override-history', authenticateToken, getTaskOverrideHistory);
@@ -68,21 +62,7 @@ router.get('/invites', authenticateToken, getMyInvites);
 router.post('/invites/:id/accept', authenticateToken, acceptTaskInvite);
 router.post('/invites/:id/decline', authenticateToken, declineTaskInvite);
 
-// Task Dependencies
-router.post('/task-dependencies', authenticateToken, createTaskDependency);
-router.get('/tasks/:taskId/dependencies', authenticateToken, getTaskDependencies);
-router.get('/tasks/:taskId/chain', authenticateToken, getTaskChain);
-router.post('/tasks/:taskId/chain/alert', authenticateToken, alertTaskChainDepartments);
-router.delete('/task-dependencies/:id', authenticateToken, deleteTaskDependency);
-
 router.post('/translate', authenticateToken, translateRateLimiter, translateText);
-
-// Department routes
-router.get('/departments/:id', authenticateToken, getDepartment);
-router.put('/departments/:id', authenticateToken, updateDepartment);
-router.delete('/departments/:id', authenticateToken, deleteDepartment);
-router.get('/departments/:id/boards', authenticateToken, getDepartmentBoards);
-router.get('/orgs/:orgId/central-view', authenticateToken, getOrganizationCentralView);
 
 // Super Admin
 router.post('/auth/super-admin/register', registerSuperAdmin);

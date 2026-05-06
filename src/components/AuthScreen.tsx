@@ -5,6 +5,9 @@ import { useStore } from '@/lib/store';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useNavigate } from 'react-router-dom';
 
+// TEMPORARY: Set to true to disable email verification for test users
+const SKIP_EMAIL_VERIFICATION_FRONTEND = true;
+
 type AuthErrorUi = {
     message: string;
     hint?: string;
@@ -152,6 +155,15 @@ export function AuthScreen() {
         setPendingConsoleVerificationToken(null);
     }, [email, mode]);
 
+    // Auto-generate verification token when in test mode
+    useEffect(() => {
+        if (SKIP_EMAIL_VERIFICATION_FRONTEND && email && !verificationToken) {
+            const dummyToken = `skip-verification-${email.toLowerCase().trim()}-${Date.now()}`;
+            setVerificationToken(dummyToken);
+            setVerificationCodeSent(true);
+        }
+    }, [email, verificationToken]);
+
     useEffect(() => {
         if (mode !== 'join-org') return;
         const query = orgName.trim();
@@ -256,12 +268,16 @@ export function AuthScreen() {
 
         try {
             if (mode === 'create-org') {
-                if (!verificationToken) {
+                if (!verificationToken && !SKIP_EMAIL_VERIFICATION_FRONTEND) {
                     setError({ message: 'Verify your email before creating workspace.' });
                     setLoading(false);
                     return;
                 }
-                const { data } = await api.post('/orgs/register', { orgName, userName, username, email, password, phoneNumber, skills, location, verificationToken });
+                const payload: Record<string, unknown> = { orgName, userName, username, email, password, phoneNumber, skills, location };
+                if (!SKIP_EMAIL_VERIFICATION_FRONTEND && verificationToken) {
+                    payload.verificationToken = verificationToken;
+                }
+                const { data } = await api.post('/orgs/register', payload);
                 login(data.token, data.user, data.orgName || orgName, data.orgId);
                 navigate('/', { replace: true });
             } else if (mode === 'join-org') {
@@ -270,20 +286,23 @@ export function AuthScreen() {
                     setLoading(false);
                     return;
                 }
-                if (!verificationToken) {
+                if (!verificationToken && !SKIP_EMAIL_VERIFICATION_FRONTEND) {
                     setError({ message: 'Verify your email before joining workspace.' });
                     setLoading(false);
                     return;
                 }
-                const { data } = await api.post('/auth/register', {
+                const payload: Record<string, unknown> = {
                     email, password, userName, username,
                     orgId: selectedOrg.id,
                     joinedBoardIds,
                     phoneNumber,
                     skills,
-                    location,
-                    verificationToken
-                });
+                    location
+                };
+                if (!SKIP_EMAIL_VERIFICATION_FRONTEND && verificationToken) {
+                    payload.verificationToken = verificationToken;
+                }
+                const { data } = await api.post('/auth/register', payload);
                 login(data.token, data.user, data.orgName, data.orgId);
                 navigate('/', { replace: true });
             } else {
@@ -311,8 +330,15 @@ export function AuthScreen() {
 
     return (
         <>
+            {/* Test Mode Banner */}
+            {SKIP_EMAIL_VERIFICATION_FRONTEND && (
+                <div className="fixed top-0 left-0 right-0 z-[200] bg-amber-100 border-b border-amber-300 px-4 py-2 text-center">
+                    <span className="text-amber-800 text-sm font-bold">TEST MODE: Email verification is disabled</span>
+                </div>
+            )}
+            
             {/* Language Toggle (Fixed Top Right) */}
-            <div className="fixed top-4 right-4 z-[100] flex gap-2">
+            <div className={`fixed top-4 right-4 z-[100] flex gap-2 ${SKIP_EMAIL_VERIFICATION_FRONTEND ? 'top-16' : ''}`}>
                 <button
                     onClick={() => setLanguage('en')}
                     className={`p-2 rounded-lg transition-all border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 hover:bg-white/80 dark:hover:bg-zinc-800/80 backdrop-blur-sm ${language === 'en' ? 'opacity-100 bg-white/50 dark:bg-zinc-800/50 shadow-sm' : 'opacity-50 hover:opacity-100'}`}
@@ -520,7 +546,7 @@ export function AuthScreen() {
                                 placeholder={mode === 'login' ? 'your_email_or_username' : 'name@example.com'}
                             />
                         </div>
-                        {mode !== 'login' && (
+                        {mode !== 'login' && !SKIP_EMAIL_VERIFICATION_FRONTEND && (
                             <div className="w-full rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-50/60 dark:bg-zinc-900/60 p-3 space-y-2">
                                 <div className="flex items-center gap-2">
                                     <button

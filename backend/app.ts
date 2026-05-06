@@ -10,8 +10,6 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:51
     .map((origin) => origin.trim())
     .filter(Boolean);
 
-const isVercelOrigin = (origin: string) => origin.endsWith('.vercel.app');
-
 const rateWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000);
 const rateLimitMax = Number(process.env.RATE_LIMIT_MAX || 300);
 const rateBucket = new Map<string, { count: number; resetAt: number }>();
@@ -59,10 +57,10 @@ const securityHeaders = (_req: Request, res: Response, next: NextFunction) => {
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || isVercelOrigin(origin) || (!isProduction && isLocalDevOrigin(origin))) {
+        if (!origin || allowedOrigins.includes(origin) || (!isProduction && isLocalDevOrigin(origin))) {
             return callback(null, true);
         }
-        return callback(new Error(`CORS origin denied: ${origin}`));
+        return callback(new Error('CORS origin denied'));
     }
 }));
 app.use(express.json({ limit: '1mb' }));
@@ -71,15 +69,18 @@ app.use(requestRateLimiter);
 
 app.use('/api', router);
 
-// Global Error Handler
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Unhandled Error:', err);
-    res.status(500).json({ 
-        error: 'Internal Server Error', 
-        message: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+// Development error handler: logs stack traces and returns error details in dev only
+if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+        console.error('Unhandled error:', err && err.stack ? err.stack : err);
+        res.status(500).json({ error: String(err?.message || 'Internal Server Error'), stack: err?.stack });
     });
-});
+} else {
+    app.use((_err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+        res.status(500).json({ error: 'Internal Server Error' });
+    });
+}
 
 // Export app for Serverless
 export default app;

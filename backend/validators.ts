@@ -9,7 +9,7 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
-    email: z.string().email('Invalid email'),
+    identifier: z.string().min(1, 'Email or username is required'),
     password: z.string().min(1, 'Password is required'),
 });
 
@@ -72,7 +72,7 @@ export const orgRegistrationSchema = z.object({
     username: z.string().min(1, 'Username is required').max(50),
     email: z.string().email('Invalid email'),
     password: z.string().min(6, 'Password must be at least 6 characters').max(100),
-    verificationToken: z.string().min(1, 'Verification token is required'),
+    verificationToken: z.string().optional(),
     phoneNumber: z.string().max(20).optional(),
     skills: z.string().max(500).optional(),
     location: z.string().max(200).optional(),
