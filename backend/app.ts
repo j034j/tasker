@@ -69,5 +69,15 @@ app.use(requestRateLimiter);
 
 app.use('/api', router);
 
+// Global Error Handler
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    console.error('Unhandled Error:', err);
+    res.status(500).json({ 
+        error: 'Internal Server Error', 
+        message: err.message,
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
+    });
+});
+
 // Export app for Serverless
 export default app;
