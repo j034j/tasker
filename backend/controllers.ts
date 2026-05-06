@@ -14,19 +14,20 @@ import {
     moveTaskSchema, translateTextSchema, orgRegistrationSchema
 } from './validators.js';
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || '';
 const JWT_EXPIRES_IN_SECONDS = Number(process.env.JWT_EXPIRES_IN_SECONDS || 60 * 60 * 12);
-const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET;
+const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET || '';
 const EMAIL_VERIFICATION_EXPIRES_HOURS = Number(process.env.EMAIL_VERIFICATION_EXPIRES_HOURS || 24);
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 const SKIP_EMAIL_VERIFICATION = process.env.SKIP_EMAIL_VERIFICATION === 'true';
 
-if (!JWT_SECRET) {
-    throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
-}
-if (!SUPER_ADMIN_SECRET) {
-    throw new Error('Missing required env var: SUPER_ADMIN_SECRET. Set in .env file.');
-}
+const checkEnvVars = () => {
+    const missing = [];
+    if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
+    if (!process.env.SUPER_ADMIN_SECRET) missing.push('SUPER_ADMIN_SECRET');
+    if (!process.env.DATABASE_URL) missing.push('DATABASE_URL');
+    return missing;
+};
 
 
 interface AuthenticatedRequest extends Request {
@@ -477,6 +478,10 @@ export const verifyEmailVerificationCode = async (req: Request, res: Response) =
 };
 
 export const registerOrg = async (req: Request, res: Response) => {
+    const missingVars = checkEnvVars();
+    if (missingVars.length > 0) {
+        return res.status(500).json({ error: `Server misconfigured. Missing environment variables: ${missingVars.join(', ')}` });
+    }
     console.log('Register Request Body:', req.body);
     const parsed = orgRegistrationSchema.safeParse(req.body);
     if (!parsed.success) {

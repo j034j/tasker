@@ -8,7 +8,13 @@ export const router = Router();
 router.get('/health', async (_req: Request, res: Response) => {
     try {
         await db.query('SELECT 1');
-        res.json({ status: 'ok', database: 'connected' });
+        const envStatus = {
+            JWT_SECRET: !!process.env.JWT_SECRET,
+            SUPER_ADMIN_SECRET: !!process.env.SUPER_ADMIN_SECRET,
+            DATABASE_URL: !!process.env.DATABASE_URL,
+            SKIP_EMAIL_VERIFICATION: !!process.env.SKIP_EMAIL_VERIFICATION,
+        };
+        res.json({ status: 'ok', database: 'connected', env: envStatus });
     } catch (err: any) {
         res.status(500).json({ status: 'error', database: 'disconnected', message: err.message });
     }
