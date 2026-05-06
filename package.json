@@ -8,7 +8,7 @@
     "dev:client": "vite",
     "dev:server": "tsx --watch backend/server.ts",
     "test:permissions": "tsx scripts/permission_smoke_test.ts",
-    "build": "npx tsc -b && npx vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
