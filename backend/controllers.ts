@@ -23,6 +23,8 @@ const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 const isProduction = process.env.NODE_ENV === 'production';
 const DEV_FALLBACK_SUPER_ADMIN_SECRET = process.env.DEV_FALLBACK_SUPER_ADMIN_SECRET || '';
 
+const SKIP_EMAIL_VERIFICATION = ['1', 'true', 'yes'].includes(String(process.env.SKIP_EMAIL_VERIFICATION || '').toLowerCase());
+
 if (!JWT_SECRET) {
     throw new Error('Missing required env var: JWT_SECRET. Set in .env file.');
 }
@@ -488,9 +490,12 @@ export const registerOrg = async (req: Request, res: Response) => {
     const normalizedUsername = username.trim().toLowerCase();
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
+    if (!SKIP_EMAIL_VERIFICATION && !validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
         console.warn('Registration failed verification token check for email:', normalizedEmail);
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
+    }
+    if (SKIP_EMAIL_VERIFICATION) {
+        console.warn('[TEST MODE] Skipping email verification for registration of:', normalizedEmail);
     }
 
     // Check if email exists
@@ -641,16 +646,30 @@ export const getAllUsers = async (_req: Request, res: Response) => {
 };
 
 export const login = async (req: Request, res: Response) => {
+    console.log('[LOGIN] Request body:', JSON.stringify(req.body));
     // Support both { email } and { identifier } for backwards compatibility
     const { email, identifier: rawIdentifier, password } = req.body;
+    
+    console.log('[LOGIN] Full body:', req.body);
+    console.log('[LOGIN] Parsed values:', { 
+        hasEmail: !!email, 
+        hasIdentifier: !!rawIdentifier, 
+        hasPassword: !!password,
+        emailValue: email,
+        identifierValue: rawIdentifier
+    });
+    
     const normalizedIdentifier = typeof rawIdentifier === 'string'
         ? rawIdentifier.trim().toLowerCase()
         : typeof email === 'string'
             ? email.trim().toLowerCase()
             : '';
 
+    console.log('[LOGIN] Normalized identifier:', normalizedIdentifier);
+    
     // Validate input with Zod
     const validation = loginSchema.safeParse({ identifier: normalizedIdentifier, password });
+    console.log('[LOGIN] Validation result:', validation.success ? 'success' : validation.error.issues);
     if (!validation.success) {
         return res.status(400).json({ error: validation.error.issues[0].message });
     }
