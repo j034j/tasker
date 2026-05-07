@@ -285,7 +285,7 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency, focusedTaskId = n
                                         onClick={async () => {
                                             const newIsPublic = !board.is_public;
                                             await updateBoard(board.id, { isPublic: newIsPublic });
-                                            setBoard({ ...board, is_public: newIsPublic ? 1 : 0 });
+                                            fetchBoard(board.id);
                                         }}
                                         className="text-xs px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                                         title="Toggle visibility"
