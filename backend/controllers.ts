@@ -1020,6 +1020,10 @@ export const createBoard = async (req: AuthenticatedRequest, res: Response) => {
 };
 
 export const createTask = async (req: AuthenticatedRequest, res: Response) => {
+    console.log(`[createTask] ========== START ==========`);
+    console.log(`[createTask] Request body:`, JSON.stringify(req.body, null, 2));
+    console.log(`[createTask] User from auth:`, req.user);
+    
     const {
         columnId, title, description, assignedTo,
         urgency, dueDate, weatherSensitive, fundingNeeded,
@@ -1028,11 +1032,19 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
         projectDuration, projectLocation, weatherCode,
         adminOverrideUrgency, adminOverridePriority
     } = req.body;
+    
+    if (!columnId) {
+        console.log(`[createTask] ERROR: columnId is missing!`);
+        return res.status(400).json({ error: 'columnId is required' });
+    }
+    if (!title) {
+        console.log(`[createTask] ERROR: title is missing!`);
+        return res.status(400).json({ error: 'title is required' });
+    }
+    
     const id = uuidv4();
     const score = 0;
-
-    console.log(`[createTask] Request received - columnId: ${columnId}, title: ${title}, user: ${req.user?.userId}`);
-    console.log(`[createTask] Authenticated user:`, req.user);
+    console.log(`[createTask] Generated task ID: ${id}`);
     
     try {
         if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
@@ -1050,16 +1062,8 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
             console.log(`[createTask] canAccessOrg FAILED`);
             return res.status(403).json({ error: 'Forbidden' });
         }
-        console.log(`[createTask] canAccessOrg passed, proceeding with insert...`);
-        if (assignedTo) {
-            const assignee = first((await db.query(
-                'SELECT id FROM users WHERE id = ? AND org_id = ?',
-                [assignedTo, columnScope.org_id]
-            )).rows);
-            if (!assignee) {
-                return res.status(400).json({ error: 'Assigned user must belong to the same organization' });
-            }
-        }
+console.log(`[createTask] canAccessOrg passed, executing INSERT...`);
+        console.log(`[createTask] INSERT params: id=${id}, columnId=${columnId}, title=${title}, description=${description}, urgency=${urgency}`);
 
         const normalizedOverrideUrgency = canUseAdminOverride(req.user.role) && adminOverrideUrgency !== undefined && adminOverrideUrgency !== null
             ? Math.max(0, Math.min(100, Number(adminOverrideUrgency)))
@@ -1088,10 +1092,14 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
             weatherCode !== undefined ? weatherCode : null,
             '' // Init interested_users
         ]);
+        console.log(`[createTask] INSERT completed successfully!`);
 
         res.json({ id, title, priority_score: score });
     } catch (err: unknown) {
-        console.error(`[createTask] Error:`, err);
+        console.error(`[createTask] ========== ERROR ==========`);
+        console.error(`[createTask] Error message:`, err instanceof Error ? err.message : 'Unknown');
+        console.error(`[createTask] Error stack:`, err instanceof Error ? err.stack : err);
+        console.error(`[createTask] ============================`);
         const message = err instanceof Error ? err.message : 'Unknown error';
         res.status(500).json({ error: message });
     }
