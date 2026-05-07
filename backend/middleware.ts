@@ -62,6 +62,24 @@ export const requireSuperAdmin = (req: Request, res: Response, next: NextFunctio
     next();
 };
 
+export const canAccessDept = async (userId: string, deptId: string): Promise<boolean> => {
+    const user = first(asRows<{ role: string; org_id: string; department_id?: string | null }>(
+        (await db.query('SELECT role, org_id, department_id FROM users WHERE id = ?', [userId])).rows
+    ));
+    if (!user) return false;
+    if (user.role === 'super_admin' || user.role === 'org_super_admin' || user.role === 'admin') return true;
+    if (user.role === 'dept_admin') {
+        const dept = first(asRows<{ admin_user_id: string }>(
+            (await db.query('SELECT admin_user_id FROM departments WHERE id = ?', [deptId])).rows
+        ));
+        return dept?.admin_user_id === userId;
+    }
+    return false;
+};
+
+const asRows = <T extends Record<string, unknown>>(rows: Record<string, unknown>[]) => rows as T[];
+const first = <T>(rows: T[]) => rows && rows.length > 0 ? rows[0] : undefined;
+
 const getRequestIdentity = (req: Request): string => {
     const forwarded = req.headers['x-forwarded-for'];
     const forwardedIp = Array.isArray(forwarded)

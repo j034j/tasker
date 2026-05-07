@@ -22,7 +22,7 @@ export function ReportingSystemPage({
     onOpenBoardsOverview
 }: ReportingSystemPageProps) {
     const { orgId, orgName, reportingOverview, fetchReportingOverview, orgMembersOverview, fetchOrgMembersOverview, currentUser } = useStore();
-    const canViewMembers = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
+    const canViewMembers = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'dept_admin';
 
     const analytics = useMemo(() => {
         if (!reportingOverview) {

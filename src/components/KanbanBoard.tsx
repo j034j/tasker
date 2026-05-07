@@ -7,8 +7,9 @@ import { type Task, useStore } from '@/lib/store';
 import { TaskModal } from './TaskModal';
 import { TaskChainGraph } from './TaskChainGraph';
 import { calculateTaskScore } from '@/lib/rankingEngine';
-import { Tag, Archive } from 'lucide-react';
+import { Tag, Archive, Building2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { api } from '@/lib/axios';
 
 function DroppableColumn({ column, children }: { column: { id: string; title: string; tasks: Task[] }; children: React.ReactNode }) {
     const { setNodeRef } = useDroppable({
@@ -40,6 +41,7 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency, focusedTaskId = n
     const [titleInput, setTitleInput] = useState('');
     const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
     const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
+    const [departmentInput, setDepartmentInput] = useState('');
 
     // Unified Modal State
     const [modalState, setModalState] = useState<{
@@ -67,10 +69,13 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency, focusedTaskId = n
     useEffect(() => {
         if (board) {
             setSelectedDepartment(board.department_id || null);
+            if (board.department_id) {
+                setDepartmentInput('');
+            }
             (async () => {
                 try {
                     const orgId = board.org_id as string;
-                    const { data } = await (await import('@/lib/axios')).api.get(`/orgs/${orgId}/departments`);
+                    const { data } = await api.get(`/orgs/${orgId}/departments`);
                     setDepartments(Array.isArray(data?.departments) ? data.departments : []);
                 } catch (err) {
                     console.error('Failed to load departments', err);
@@ -171,7 +176,7 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency, focusedTaskId = n
 
     const activeTask = activeId ? board.columns.flatMap(c => c.tasks).find(t => t.id === activeId) : null;
 
-    const canEdit = currentUser?.id === board.created_by || currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
+    const canEdit = currentUser?.id === board.created_by || currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'dept_admin';
 
     const handleTitleSave = async () => {
         if (!titleInput.trim() || titleInput === board.name) {
@@ -185,6 +190,36 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency, focusedTaskId = n
     const startEditingKey = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') handleTitleSave();
         if (e.key === 'Escape') setIsEditingTitle(false);
+    };
+
+    const handleDepartmentChange = async (deptId: string | null) => {
+        if (!board) return;
+        setSelectedDepartment(deptId);
+        setDepartmentInput('');
+        try {
+            await updateBoard(board.id, { departmentId: deptId });
+            fetchBoard(board.id);
+        } catch (err) {
+            console.error('Failed to update department', err);
+        }
+    };
+
+    const handleCreateDepartment = async () => {
+        if (!board || !departmentInput.trim()) return;
+        if (departments.some(d => d.name.toLowerCase() === departmentInput.trim().toLowerCase())) return;
+
+        try {
+            const orgId = board.org_id as string;
+            const res = await api.post(`/orgs/${orgId}/departments`, { name: departmentInput.trim() });
+            const newDeptId = res.data?.id;
+            if (newDeptId) {
+                const newDept = { id: newDeptId, name: departmentInput.trim() };
+                setDepartments(prev => [...prev, newDept]);
+                await handleDepartmentChange(newDeptId);
+            }
+        } catch (err) {
+            console.error('Failed to create department', err);
+        }
     };
 
     return (
@@ -247,25 +282,59 @@ export function KanbanBoard({ sortByUrgency, setSortByUrgency, focusedTaskId = n
                                 )}
                                 <span>•</span>
                                 <span>{board.followers ? board.followers.split(',').filter(Boolean).length : 0} Members</span>
+                                {currentUser?.department_id && (
+                                    <>
+                                        <span>•</span>
+                                        <span className="text-indigo-600 dark:text-indigo-400 font-medium">Dept: {departments.find(d => d.id === currentUser.department_id)?.name || '—'}</span>
+                                    </>
+                                )}
                             </div>
-                            {/* Department selector */}
-                            <div className="ml-4">
-                                <select value={selectedDepartment ?? ''} onChange={async (e) => {
-                                    const val = e.target.value || null;
-                                    setSelectedDepartment(val);
-                                    if (!board) return;
-                                    try {
-                                        await updateBoard(board.id, { departmentId: val });
-                                        // refresh board
-                                        fetchBoard(board.id);
-                                    } catch (err) {
-                                        console.error('Failed to update department', err);
-                                        alert('Failed to update department');
-                                    }
-                                }} className="text-sm rounded px-2 py-1 border bg-white dark:bg-zinc-800">
-                                    <option value="">No department</option>
-                                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                </select>
+                            {/* Department selector with create option */}
+                            <div className="ml-4 flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-zinc-400" />
+                                <input
+                                    list="kanban-dept-list"
+                                    value={departmentInput}
+                                    onChange={async (e) => {
+                                        setDepartmentInput(e.target.value);
+                                        // Check if exact match
+                                        const match = departments.find(d => d.name.toLowerCase() === e.target.value.toLowerCase());
+                                        if (match) {
+                                            setDepartmentInput(match.name);
+                                            await handleDepartmentChange(match.id);
+                                        }
+                                    }}
+                                    onKeyDown={async (e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            await handleCreateDepartment();
+                                        }
+                                    }}
+                                    placeholder={selectedDepartment ? departments.find(d => d.id === selectedDepartment)?.name || 'Select department' : 'Assign department'}
+                                    className="text-sm rounded px-2 py-1 border bg-white dark:bg-zinc-800 w-40"
+                                />
+                                <datalist id="kanban-dept-list">
+                                    {departments.map(d => <option key={d.id} value={d.name} />)}
+                                </datalist>
+                                {canEdit && (
+                                    <button
+                                        onClick={handleCreateDepartment}
+                                        disabled={!departmentInput.trim() || departments.some(d => d.name.toLowerCase() === departmentInput.trim().toLowerCase())}
+                                        className="text-xs px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                        title="Create new department"
+                                    >
+                                        + New
+                                    </button>
+                                )}
+                                {selectedDepartment && (
+                                    <button
+                                        onClick={() => handleDepartmentChange(null)}
+                                        className="text-xs px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400"
+                                        title="Remove department"
+                                    >
+                                        Clear
+                                    </button>
+                                )}
                             </div>
                         </div>
                         {tagFilter && (

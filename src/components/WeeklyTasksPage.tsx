@@ -48,12 +48,13 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
     const [objectiveStatus, setObjectiveStatus] = useState<string | null>(null);
     const [objectiveSaving, setObjectiveSaving] = useState(false);
     const canViewAllDepartments = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
+    const isDeptAdmin = currentUser?.role === 'dept_admin';
     const ledDepartments = useMemo(() => (
         departments.filter((department) => department.admin_user_id === currentUser?.id)
     ), [currentUser?.id, departments]);
     const accessibleDepartments = useMemo(() => (
-        canViewAllDepartments ? departments : ledDepartments
-    ), [canViewAllDepartments, departments, ledDepartments]);
+        canViewAllDepartments ? departments : (isDeptAdmin ? ledDepartments : [])
+    ), [canViewAllDepartments, departments, isDeptAdmin, ledDepartments]);
     const effectiveDepartmentId = selectedDepartmentId === 'all' ? null : selectedDepartmentId;
     const selectedDepartment = departments.find((department) => department.id === effectiveDepartmentId);
     const canEditObjective = canViewAllDepartments;
@@ -81,11 +82,11 @@ export function WeeklyTasksPage({ weekStart, onWeekChange }: WeeklyTasksPageProp
 
     useEffect(() => {
         if (!orgId) return;
-        if (!canViewAllDepartments && !departmentsLoaded) return;
-        if (!canViewAllDepartments && ledDepartments.length > 0 && selectedDepartmentId === 'all') return;
-        if (!canViewAllDepartments && ledDepartments.length === 0) return;
+        if (!isDeptAdmin && !canViewAllDepartments && !departmentsLoaded) return;
+        if (!isDeptAdmin && !canViewAllDepartments && ledDepartments.length > 0 && selectedDepartmentId === 'all') return;
+        if (!isDeptAdmin && !canViewAllDepartments && ledDepartments.length === 0) return;
         fetchReportingOverview(orgId, weekStart, effectiveDepartmentId).catch(console.error);
-    }, [canViewAllDepartments, departmentsLoaded, effectiveDepartmentId, fetchReportingOverview, ledDepartments.length, orgId, selectedDepartmentId, weekStart]);
+    }, [canViewAllDepartments, departmentsLoaded, effectiveDepartmentId, fetchReportingOverview, isDeptAdmin, ledDepartments.length, orgId, selectedDepartmentId, weekStart]);
 
     useEffect(() => {
         setStatusFilter('all');

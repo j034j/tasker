@@ -151,7 +151,38 @@ export type TranslationKey =
     | 'dependencies_no_deps'
     | 'dependencies_remove_confirm'
     | 'dependencies_error_self'
-    | 'dependencies_error_circular';
+    | 'dependencies_error_circular'
+    // Task Activity Snapshot
+    | 'task_activity_snapshot'
+    | 'recent_signals'
+    | 'open_snapshot'
+    | 'hide_snapshot'
+    | 'no_activity'
+    | 'total_tasks'
+    | 'in_progress'
+    | 'completed'
+    | 'new_this_week'
+    | 'green_new'
+    | 'yellow_progress'
+    | 'red_urgent'
+    | 'white_done'
+    | 'multi_color'
+    | 'all_departments'
+    | 'day_focus'
+    | 'no_day_selected'
+    | 'refreshing'
+    | 'latest_activity'
+    | 'expand_snapshot'
+    // Central Board
+    | 'central_board'
+    | 'central_board_desc'
+    | 'all_departments_label'
+    | 'select_department_label'
+    | 'boards_in_dept'
+    | 'tasks_count'
+    | 'no_tasks_in_dept'
+    | 'view_task'
+    | 'combine_all';
 
 export const translations: Record<Language, Record<TranslationKey, string>> = {
     en: {
@@ -294,6 +325,40 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         dash_browse_all: 'Browse All Boards',
         translate_btn: 'Translate Content',
         translating: 'Translating...',
+
+        // Task Activity Snapshot
+        task_activity_snapshot: 'Task Activity Snapshot',
+        recent_signals: 'recent signals',
+        open_snapshot: 'Open Snapshot',
+        hide_snapshot: 'Hide Snapshot',
+        no_activity: 'No activity',
+        total_tasks: 'Total tasks',
+        in_progress: 'In progress',
+        completed: 'Completed',
+        new_this_week: 'New this week',
+        green_new: 'Green = newly created',
+        yellow_progress: 'Yellow = in progress',
+        red_urgent: 'Red = urgent',
+        white_done: 'White = completed',
+        multi_color: 'Multi-color tiles combine signals',
+        all_departments: 'All Departments',
+        day_focus: 'Day Focus',
+        no_day_selected: 'No day selected',
+        refreshing: 'Refreshing...',
+        latest_activity: 'Latest activity',
+        expand_snapshot: 'Expand for the full day grid and clickable task list.',
+
+        // Central Board
+        central_board: 'Central Board',
+        central_board_desc: 'View all tasks from across departments in one unified view',
+        all_departments_label: 'All Departments',
+        select_department_label: 'Filter by Department',
+        boards_in_dept: 'Boards',
+        tasks_count: 'Tasks',
+        no_tasks_in_dept: 'No tasks in this department yet',
+        combine_all: 'Combine All',
+        view_task: 'View Task',
+
         auth_phone_optional: 'Phone Number (Optional)',
         profile_title: 'My Profile',
         profile_new_password: 'New Password (Optional)',
@@ -470,6 +535,39 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
         dependencies_no_deps: 'Noch keine Abhängigkeiten verknüpft.',
         dependencies_remove_confirm: 'Sind Sie sicher, dass Sie diese Abhängigkeit entfernen möchten?',
         dependencies_error_self: 'Abhängigkeit von sich selbst nicht möglich',
-        dependencies_error_circular: 'Zirkuläre Abhängigkeit erkannt'
+        dependencies_error_circular: 'Zirkuläre Abhängigkeit erkannt',
+
+        // Task Activity Snapshot
+        task_activity_snapshot: 'Aufgaben-Aktivitätsübersicht',
+        recent_signals: 'aktuelle Signale',
+        open_snapshot: 'Übersicht öffnen',
+        hide_snapshot: 'Übersicht schließen',
+        no_activity: 'Keine Aktivität',
+        total_tasks: 'Aufgaben gesamt',
+        in_progress: 'In Bearbeitung',
+        completed: 'Abgeschlossen',
+        new_this_week: 'Neu diese Woche',
+        green_new: 'Grün = neu erstellt',
+        yellow_progress: 'Gelb = in Bearbeitung',
+        red_urgent: 'Rot = dringend',
+        white_done: 'Weiß = abgeschlossen',
+        multi_color: 'Mehrfarbig = Signale kombiniert',
+        all_departments: 'Alle Abteilungen',
+        day_focus: 'Tagesfokus',
+        no_day_selected: 'Kein Tag ausgewählt',
+        refreshing: 'Aktualisiere...',
+        latest_activity: 'Letzte Aktivität',
+        expand_snapshot: 'Für vollständiges Tagesraster und klickbare Aufgabenliste erweitern',
+
+        // Central Board
+        central_board: 'Zentrales Board',
+        central_board_desc: 'Alle Aufgaben aus allen Abteilungen in einer einheitlichen Ansicht',
+        all_departments_label: 'Alle Abteilungen',
+        select_department_label: 'Nach Abteilung filtern',
+        boards_in_dept: 'Boards',
+        tasks_count: 'Aufgaben',
+        no_tasks_in_dept: 'Noch keine Aufgaben in dieser Abteilung',
+        combine_all: 'Alle kombinieren',
+        view_task: 'Aufgabe anzeigen'
     }
 };

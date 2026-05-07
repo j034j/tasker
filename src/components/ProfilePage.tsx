@@ -3,18 +3,20 @@ import { useStore } from '@/lib/store';
 import type { RecurringDuty } from '@/lib/store';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/Button';
-import { UserPlus, Mail, Check, X, CheckCircle2 } from 'lucide-react';
+import { UserPlus, Mail, Check, X, CheckCircle2, Users } from 'lucide-react';
+import { api } from '@/lib/axios';
 
 interface ProfilePageProps {
     onBack: () => void;
 }
 
-const isInviteAdmin = (role?: string) => role === 'admin' || role === 'org_super_admin' || role === 'super_admin';
+const isInviteAdmin = (role?: string) => role === 'admin' || role === 'org_super_admin' || role === 'super_admin' || role === 'dept_admin';
 
 export function ProfilePage({ onBack }: ProfilePageProps) {
     const {
         currentUser, updateUser, fetchUserProfile, userProfile,
-        taskInvites, fetchMyInvites, fetchInviteCandidates, fetchTasksForInvite, sendTaskInvite, acceptInvite, declineInvite
+        taskInvites, fetchMyInvites, fetchInviteCandidates, fetchTasksForInvite, sendTaskInvite, acceptInvite, declineInvite,
+        assignUserToDepartment, fetchDepartmentMembers, orgMembersOverview, orgId
     } = useStore();
     const { t } = useLanguage();
 
@@ -30,6 +32,13 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const hasUsername = Boolean((userProfile?.user?.username || currentUser?.username || '').trim());
 
+    // Department assignment state
+    const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+    const [deptMembers, setDeptMembers] = useState<{ id: string; name: string; email: string; role: string }[]>([]);
+    const [selectedDeptId, setSelectedDeptId] = useState<string>('');
+    const [assigningUser, setAssigningUser] = useState<string | null>(null);
+    const isAdmin = isInviteAdmin(currentUser?.role);
+
     // Task invite (send) state
     const [inviteTaskId, setInviteTaskId] = useState('');
     const [inviteUserId, setInviteUserId] = useState('');
@@ -39,6 +48,11 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
     const [inviteSearch, setInviteSearch] = useState('');
     const [inviteSending, setInviteSending] = useState(false);
     const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+
+    // Department assignment state
+    const [assignUserId, setAssignUserId] = useState('');
+    const [newDeptName, setNewDeptName] = useState('');
+    const [makeUserDeptAdmin, setMakeUserDeptAdmin] = useState(false);
 
     // Initial Fetch
     useEffect(() => {
@@ -89,6 +103,67 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
         if (isInviteAdmin(currentUser?.role) || inviteTaskId) loadCandidates();
         else setInviteCandidates([]);
     }, [currentUser?.role, userProfile?.organization?.id, inviteSearch, inviteTaskId, loadCandidates]);
+
+    // Load departments for admin user assignment
+    useEffect(() => {
+        if (!orgId || !isAdmin) return;
+        api.get(`/orgs/${orgId}/departments`).then(({ data }) => {
+            setDepartments(Array.isArray(data?.departments) ? data.departments : []);
+        }).catch(console.error);
+    }, [orgId, isAdmin]);
+
+    useEffect(() => {
+        if (!selectedDeptId) {
+            setDeptMembers([]);
+            return;
+        }
+        fetchDepartmentMembers(selectedDeptId).then(setDeptMembers).catch(console.error);
+    }, [selectedDeptId, fetchDepartmentMembers]);
+
+    const handleAssignUserToDept = async () => {
+        if (!assignUserId || !newDeptName.trim()) return;
+        setAssigningUser(assignUserId);
+        try {
+            let deptId = selectedDeptId;
+            if (!deptId) {
+                const existing = departments.find(d => d.name.toLowerCase() === newDeptName.trim().toLowerCase());
+                if (existing) {
+                    deptId = existing.id;
+                } else {
+                    const res = await api.post(`/orgs/${orgId}/departments`, { name: newDeptName.trim() });
+                    deptId = res.data?.id;
+                    setDepartments(prev => [...prev, { id: deptId, name: newDeptName.trim() }]);
+                    setSelectedDeptId(deptId);
+                }
+            }
+            await assignUserToDepartment(assignUserId, deptId, makeUserDeptAdmin);
+            setDeptMembers(prev => {
+                const user = orgMembersOverview.find(m => m.id === assignUserId);
+                if (user && !prev.find(m => m.id === assignUserId)) {
+                    return [...prev, { ...user, role: 'member' }];
+                }
+                return prev;
+            });
+            setAssignUserId('');
+            setNewDeptName('');
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setAssigningUser(null);
+        }
+    };
+
+    const handleRemoveUserFromDept = async (userId: string) => {
+        setAssigningUser(userId);
+        try {
+            await assignUserToDepartment(userId, null);
+            setDeptMembers(prev => prev.filter(m => m.id !== userId));
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setAssigningUser(null);
+        }
+    };
 
     const handleSendInvite = async () => {
         if (!inviteTaskId || !inviteUserId) {
@@ -393,12 +468,130 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                                         <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{userProfile.organization.name}</h3>
                                         <p className="text-sm text-zinc-500 uppercase tracking-wider font-bold">{currentUser?.role}</p>
                                     </div>
+                                    {userProfile.department && (
+                                        <div className="mt-3 p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800">
+                                            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold uppercase">Department</p>
+                                            <p className="font-semibold text-indigo-700 dark:text-indigo-300">{userProfile.department.name}</p>
+                                        </div>
+                                    )}
                                     <p className="text-xs text-zinc-400 mt-4">Org ID: {userProfile.organization.id}</p>
                                 </div>
                             ) : (
                                 <p className="text-zinc-500">Loading organization details...</p>
                             )}
                         </div>
+
+                        {/* Department Management (Admins only) */}
+                        {isAdmin && (
+                            <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-8">
+                                <h2 className="text-xl font-bold mb-4 text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                                    <Users className="w-5 h-5" /> Department Management
+                                </h2>
+                                <p className="text-sm text-zinc-500 mb-4">
+                                    Assign members to departments. Their weekly task overview will be filtered accordingly.
+                                </p>
+
+                                <div className="space-y-6">
+                                    {/* Assign User Section */}
+                                    <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 space-y-3">
+                                        <h3 className="text-sm font-bold text-indigo-700 dark:text-indigo-300">Assign User to Department</h3>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 mb-1">User</label>
+                                                <select
+                                                    value={assignUserId}
+                                                    onChange={(e) => setAssignUserId(e.target.value)}
+                                                    className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm"
+                                                >
+                                                    <option value="">— Select user —</option>
+                                                    {orgMembersOverview.map((m) => (
+                                                        <option key={m.id} value={m.id}>{m.name} ({m.email})</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-zinc-600 dark:text-zinc-400 mb-1">Department</label>
+                                                <input
+                                                    type="text"
+                                                    list="profile-dept-list"
+                                                    value={newDeptName}
+                                                    onChange={(e) => setNewDeptName(e.target.value)}
+                                                    placeholder="Type or select department"
+                                                    className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm"
+                                                />
+                                                <datalist id="profile-dept-list">
+                                                    {departments.map((d) => (
+                                                        <option key={d.id} value={d.name} />
+                                                    ))}
+                                                </datalist>
+                                            </div>
+
+                                            <label className="flex items-center gap-2 p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={makeUserDeptAdmin}
+                                                    onChange={(e) => setMakeUserDeptAdmin(e.target.checked)}
+                                                    className="w-4 h-4 rounded text-indigo-600"
+                                                />
+                                                <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">Make this user a Department Admin</span>
+                                            </label>
+                                        </div>
+
+                                        <Button
+                                            onClick={handleAssignUserToDept}
+                                            disabled={!assignUserId || !newDeptName.trim() || assigningUser === assignUserId}
+                                            className="w-full py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
+                                        >
+                                            {assigningUser === assignUserId ? 'Assigning...' : 'Assign User'}
+                                        </Button>
+                                    </div>
+
+                                    {/* View Members by Department */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-2">View/Remove Members</label>
+                                        <select
+                                            value={selectedDeptId}
+                                            onChange={(e) => setSelectedDeptId(e.target.value)}
+                                            className="w-full px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800"
+                                        >
+                                            <option value="">— Choose a department —</option>
+                                            {departments.map((d) => (
+                                                <option key={d.id} value={d.id}>{d.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {selectedDeptId && (
+                                        <div className="space-y-3">
+                                            <h3 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Members in this department</h3>
+                                            {deptMembers.length === 0 ? (
+                                                <p className="text-sm text-zinc-500">No members assigned yet.</p>
+                                            ) : (
+                                                <div className="max-h-[250px] overflow-y-auto space-y-2">
+                                                    {deptMembers.map((member) => (
+                                                        <div key={member.id} className="flex items-center justify-between p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50">
+                                                            <div>
+                                                                <p className="font-semibold text-zinc-800 dark:text-zinc-200">{member.name}</p>
+                                                                <p className="text-xs text-zinc-500">{member.email}</p>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => handleRemoveUserFromDept(member.id)}
+                                                                disabled={assigningUser === member.id}
+                                                                className="text-xs font-bold text-red-600 hover:text-red-700 px-2 py-1 rounded border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                            >
+                                                                {assigningUser === member.id ? 'Removing...' : 'Remove'}
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Task invites (received) */}
                         <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-800 p-8">
@@ -515,6 +708,28 @@ export function ProfilePage({ onBack }: ProfilePageProps) {
                                     ))}
                                 </div>
                             )}
+                        </div>
+
+                        {/* Danger Zone */}
+                        <div className="mt-8 pt-8 border-t border-zinc-200 dark:border-zinc-800">
+                            <div className="bg-red-50 dark:bg-red-900/20 rounded-3xl border border-red-200 dark:border-red-800 p-8">
+                                <h2 className="text-xl font-bold mb-2 text-red-700 dark:text-red-300">Danger Zone</h2>
+                                <p className="text-sm text-red-600 dark:text-red-400 mb-4">
+                                    Once you delete your account, there is no going back. All your data will be permanently removed.
+                                </p>
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+                                            useStore.getState().logout();
+                                            api.delete(`/users/${currentUser?.id}`).catch(console.error);
+                                            window.location.href = '/';
+                                        }
+                                    }}
+                                    className="px-6 py-3 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors"
+                                >
+                                    Delete My Account
+                                </button>
+                            </div>
                         </div>
 
                     </div>

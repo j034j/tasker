@@ -75,6 +75,8 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
     const [saving, setSaving] = useState(false);
     const [dependencyModalOpen, setDependencyModalOpen] = useState(false);
 
+    const hasUnsavedChanges = Boolean(title || description || dueDate || weatherSensitive || fundingNeeded > 0 || peopleRequired !== 1 || skills || season || projectDuration || projectLocation);
+
     const fetchGlobalWeatherImpact = async () => {
         try {
             const coords = await getCoordinates('Berlin'); // Default fallback for global
@@ -207,6 +209,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
 
             if (task) {
                 // Update
+                console.log(`[TaskModal] Sending PUT to /tasks/${task.id}:`, payload);
                 await api.put(`/tasks/${task.id}`, payload);
             } else {
                 // Create
@@ -231,7 +234,7 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
     const effectiveWeatherImpact = localWeatherImpact !== null ? localWeatherImpact : globalWeatherImpact;
 
     return (
-        <DraggableModalWrapper isOpen={true} onClose={onClose} className="w-full max-w-md sm:max-w-lg max-h-[calc(100dvh-2rem)] bg-white dark:bg-zinc-900">
+        <DraggableModalWrapper isOpen={true} onClose={onClose} hasUnsavedChanges={hasUnsavedChanges} className="w-full max-w-md sm:max-w-lg max-h-[calc(100dvh-2rem)] bg-white dark:bg-zinc-900">
             <div className="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col">
                 <div className="relative">
                 {/* Header with gradient bar */}
@@ -293,8 +296,9 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                                     if (!title && !description) return;
                                     setSaving(true); // Reuse saving state for loading spinner effect or create new one
                                     try {
-                                        const targetLang = localStorage.getItem('app_language') === 'de' ? 'de' : 'en';
-                                        const sourceLang = targetLang === 'en' ? 'de' : 'en'; // Simple toggle for now
+                                        const isGermanUI = localStorage.getItem('app_language') === 'de';
+                                        const targetLang = isGermanUI ? 'en' : 'de';
+                                        const sourceLang = isGermanUI ? 'de' : 'en';
 
                                         if (title) {
                                             const res = await api.post('/translate', { text: title, sourceLang, targetLang });
@@ -305,7 +309,8 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                                             if (res.data.translatedText) setDescription(res.data.translatedText);
                                         }
                                     } catch (e) {
-                                        console.error(e);
+                                        console.error('Translation failed:', e);
+                                        // Silently fail - keep original text
                                     } finally {
                                         setSaving(false);
                                     }
@@ -323,14 +328,39 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                         <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-2 uppercase tracking-wide">
                             📍 {t('location_label') || 'Location'}
                         </label>
-                        <input
-                            type="text"
-                            value={projectLocation}
-                            onChange={(e) => setProjectLocation(e.target.value)}
-                            onBlur={handleLocationBlur}
-                            className="w-[calc(100%-2px)] px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
-                            placeholder="e.g. Durnau, Berlin"
-                        />
+                        <div className="relative">
+                            <input
+                                type="text"
+                                value={projectLocation}
+                                onChange={(e) => setProjectLocation(e.target.value)}
+                                onBlur={handleLocationBlur}
+                                className="w-[calc(100%-2px)] px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
+                                placeholder="e.g. Durnau, Berlin"
+                            />
+                            {projectLocation && (
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setSaving(true);
+                                        try {
+                                            const isGermanUI = localStorage.getItem('app_language') === 'de';
+                                            const targetLang = isGermanUI ? 'en' : 'de';
+                                            const sourceLang = isGermanUI ? 'de' : 'en';
+                                            const res = await api.post('/translate', { text: projectLocation, sourceLang, targetLang });
+                                            if (res.data.translatedText) setProjectLocation(res.data.translatedText);
+                                        } catch (e) {
+                                            console.error('Translation failed:', e);
+                                        } finally {
+                                            setSaving(false);
+                                        }
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400"
+                                    title={(t as (key: string) => string)('translate_btn')}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 8 5-5 5 5" /><path d="m12 13 5 5 5-5" /><path d="M2 12h20" /><path d="M2 19h20" /></svg>
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Calculated Urgency Display */}
@@ -440,13 +470,38 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                             <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200 uppercase tracking-wide">
                                 🛠️ {t('skills_label')}
                             </label>
-                            <button
-                                type="button"
-                                onClick={handleAutoTag}
-                                className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-2 py-1 rounded transition-colors"
-                            >
-                                ✨ {t('auto_generate')}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleAutoTag}
+                                    className="text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-2 py-1 rounded transition-colors"
+                                >
+                                    ✨ {t('auto_generate')}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        if (!skills) return;
+                                        setSaving(true);
+                                        try {
+                                            const isGermanUI = localStorage.getItem('app_language') === 'de';
+                                            const targetLang = isGermanUI ? 'en' : 'de';
+                                            const sourceLang = isGermanUI ? 'de' : 'en';
+                                            const res = await api.post('/translate', { text: skills, sourceLang, targetLang });
+                                            if (res.data.translatedText) setSkills(res.data.translatedText);
+                                        } catch (e) {
+                                            console.error('Translation failed:', e);
+                                        } finally {
+                                            setSaving(false);
+                                        }
+                                    }}
+                                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 flex items-center gap-1 transition-colors px-2 py-1"
+                                    title={(t as (key: string) => string)('translate_btn')}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 8 5-5 5 5" /><path d="m12 13 5 5 5-5" /><path d="M2 12h20" /><path d="M2 19h20" /></svg>
+                                    {(t as (key: string) => string)('translate_btn')}
+                                </button>
+                            </div>
                         </div>
                         <input
                             type="text"
@@ -526,13 +581,38 @@ export function TaskModal({ task, columnId, onClose, onSave }: TaskModalProps) {
                         <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-2 uppercase tracking-wide">
                             ⏳ Duration
                         </label>
-                        <input
-                            type="text"
-                            value={projectDuration}
-                            onChange={(e) => setProjectDuration(e.target.value)}
-                            className="w-full px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm"
-                            placeholder="e.g. 2 weeks"
-                        />
+                        <div className="relative">
+                            <input
+                                type="text"
+                                value={projectDuration}
+                                onChange={(e) => setProjectDuration(e.target.value)}
+                                className="w-full px-4 py-2.5 border-2 border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm pr-10"
+                                placeholder="e.g. 2 weeks"
+                            />
+                            {projectDuration && (
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setSaving(true);
+                                        try {
+                                            const isGermanUI = localStorage.getItem('app_language') === 'de';
+                                            const targetLang = isGermanUI ? 'en' : 'de';
+                                            const sourceLang = isGermanUI ? 'de' : 'en';
+                                            const res = await api.post('/translate', { text: projectDuration, sourceLang, targetLang });
+                                            if (res.data.translatedText) setProjectDuration(res.data.translatedText);
+                                        } catch (e) {
+                                            console.error('Translation failed:', e);
+                                        } finally {
+                                            setSaving(false);
+                                        }
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400"
+                                    title={(t as (key: string) => string)('translate_btn')}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 8 5-5 5 5" /><path d="m12 13 5 5 5-5" /><path d="M2 12h20" /><path d="M2 19h20" /></svg>
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div>

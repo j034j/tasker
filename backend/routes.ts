@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode, createDepartment, getDepartmentsForOrg, getDepartment, updateDepartment, deleteDepartment, getDepartmentBoards } from './controllers.js';
+import { registerOrg, login, createBoard, createTask, getBoard, getBoards, getReportingOverview, emailReportingExport, getOrgMembersOverview, getWeeklyObjective, getWeeklyObjectiveHistory, upsertWeeklyObjective, requestOrgSuperAdminPromotion, confirmOrgSuperAdminPromotion, moveTask, updateTask, getTaskOverrideHistory, deleteTask, updateBoard, deleteBoard, deleteOrganization, toggleBoardFollow, toggleTaskInterest, getInviteCandidates, getTasksForInvite, sendTaskInvite, getMyInvites, acceptTaskInvite, declineTaskInvite, findOrg, searchOrgs, registerUser, switchOrganization, translateText, updateUserLastBoard, updateUser, getUserProfile, getNotifications, markNotificationRead, registerSuperAdmin, elevateToSuperAdmin, deElevateSuperAdmin, getSystemStats, getAllOrgs, getAllUsers, deleteOrganizationAdmin, updateOrganizationAdmin, getOrgBoardsAdmin, updateUserAdmin, deleteUserAdmin, resetPasswordAdmin, requestPasswordReset, resetPassword, requestEmailVerificationCode, verifyEmailVerificationCode, createDepartment, getDepartmentsForOrg, getDepartment, updateDepartment, deleteDepartment, getDepartmentBoards, getOrganizationCentralView, assignUserToDepartment, getDepartmentMembers } from './controllers.js';
 import { authenticateToken, requireSuperAdmin, loginRateLimiter, passwordResetRateLimiter, translateRateLimiter } from './middleware.js';
 
 export const router = Router();
@@ -44,10 +44,15 @@ router.post('/orgs/:orgId/super-admin/promote/confirm', authenticateToken, confi
 // Departments
 router.post('/orgs/:orgId/departments', authenticateToken, createDepartment);
 router.get('/orgs/:orgId/departments', authenticateToken, getDepartmentsForOrg);
+router.get('/orgs/:orgId/central-view', authenticateToken, getOrganizationCentralView);
 router.get('/departments/:deptId', authenticateToken, getDepartment);
 router.put('/departments/:deptId', authenticateToken, updateDepartment);
 router.delete('/departments/:deptId', authenticateToken, deleteDepartment);
 router.get('/departments/:deptId/boards', authenticateToken, getDepartmentBoards);
+router.get('/departments/:deptId/members', authenticateToken, getDepartmentMembers);
+
+// User-Department Assignment
+router.post('/users/department', authenticateToken, assignUserToDepartment);
 
 router.post('/tasks', authenticateToken, createTask);
 router.put('/tasks/:id', authenticateToken, updateTask);

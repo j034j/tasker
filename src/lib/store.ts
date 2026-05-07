@@ -62,11 +62,12 @@ export interface User {
     name: string;
     username?: string;
     email: string;
-    role: 'admin' | 'org_super_admin' | 'member' | 'super_admin';
+    role: 'admin' | 'org_super_admin' | 'member' | 'super_admin' | 'dept_admin';
     lastBoardId?: string;
     phone_number?: string;
     skills?: string;
     location?: string;
+    department_id?: string | null;
 }
 
 const STORAGE_KEYS = {
@@ -203,6 +204,7 @@ export interface RegisterSuperAdminPayload {
 export interface UserProfileData {
     user: User;
     organization: { id: string; name: string };
+    department?: { id: string; name: string } | null;
     interestedTasks: { id: string; title: string; priority_score: number; board_name: string; board_id: string }[];
     recurringDuties: RecurringDuty[];
 }
@@ -432,6 +434,8 @@ interface AppState {
     deleteTaskDependency: (id: string) => Promise<void>;
     fetchTaskChain: (taskId: string) => Promise<{ tasks: any[], edges: any[], departments?: { id: string | null; name: string; adminUserId: string | null; taskCount: number }[], estimatedTotalLabel?: string | null, missingDurationTaskIds?: string[] }>;
     alertTaskChainDepartments: (taskId: string) => Promise<{ notifiedCount: number; departments: string[]; taskCount: number }>;
+    assignUserToDepartment: (userId: string, departmentId: string | null, makeAdmin?: boolean) => Promise<void>;
+    fetchDepartmentMembers: (deptId: string) => Promise<{ id: string; name: string; email: string; role: string }[]>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -501,7 +505,10 @@ export const useStore = create<AppState>((set, get) => ({
         try {
             const { data } = await api.get(`/orgs/${orgId}/boards`);
             set({ boards: data });
-        } catch (e) {
+        } catch (e: any) {
+            if (e?.code === 'ERR_CANCELED' || e?.message?.includes('canceled') || e?.message?.includes('aborted')) {
+                return;
+            }
             console.error(e);
             useToastStore.getState().addToast('Failed to load boards', 'error');
         }
@@ -1085,6 +1092,32 @@ export const useStore = create<AppState>((set, get) => ({
         } catch (e) {
             console.error('Failed to alert task chain departments', e);
             useToastStore.getState().addToast('Failed to alert task chain departments', 'error');
+            throw e;
+        }
+    },
+    assignUserToDepartment: async (userId, departmentId, makeAdmin = false) => {
+        try {
+            const { data } = await api.post('/users/department', { userId, departmentId, makeAdmin });
+            if (userId === get().currentUser?.id) {
+                get().fetchUserProfile();
+            }
+            useToastStore.getState().addToast(
+                departmentId ? 'User assigned to department' : 'User removed from department',
+                'success'
+            );
+            return data;
+        } catch (e) {
+            console.error('Failed to assign user to department', e);
+            useToastStore.getState().addToast('Failed to update user department', 'error');
+            throw e;
+        }
+    },
+    fetchDepartmentMembers: async (deptId) => {
+        try {
+            const { data } = await api.get(`/departments/${deptId}/members`);
+            return data?.members || [];
+        } catch (e) {
+            console.error('Failed to fetch department members', e);
             throw e;
         }
     }

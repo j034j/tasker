@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/axios';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const DAY_COUNT = 28;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -138,20 +139,33 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
     const [isExpanded, setIsExpanded] = useState(false);
     const [selectedDepartment, setSelectedDepartment] = useState('all');
     const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
+    const { t } = useLanguage();
 
     useEffect(() => {
         if (!orgId) return;
 
         let cancelled = false;
+        let rateLimitCount = 0;
         const loadSnapshot = async () => {
+            if (rateLimitCount >= 3) {
+                console.log('[Snapshot] Rate limited, skipping...');
+                return;
+            }
             setLoading(true);
             try {
                 const { data } = await api.get(`/orgs/${orgId}/central-view`);
                 if (!cancelled) {
                     setBoards(Array.isArray(data?.boards) ? data.boards : []);
+                    rateLimitCount = 0;
                 }
-            } catch (error) {
-                console.error('Failed to load task activity snapshot', error);
+            } catch (error: any) {
+                if (error?.code === 'ERR_CANCELED' || error?.message?.includes('canceled') || error?.message?.includes('aborted')) {
+                    return;
+                }
+                if (error?.response?.status === 429) {
+                    rateLimitCount++;
+                    console.log('[Snapshot] Rate limited, count:', rateLimitCount);
+                }
                 if (!cancelled) {
                     setBoards([]);
                 }
@@ -164,8 +178,10 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
 
         loadSnapshot().catch(console.error);
         const intervalId = window.setInterval(() => {
-            loadSnapshot().catch(console.error);
-        }, 60000);
+            if (rateLimitCount < 3) {
+                loadSnapshot().catch(console.error);
+            }
+        }, 120000);
 
         return () => {
             cancelled = true;
@@ -274,29 +290,29 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
     const totalsLabel = `New ${taskTotals.newTasks}, Ongoing ${taskTotals.inProgress}, Urgent ${taskTotals.urgent}, Completed ${taskTotals.completed}`;
 
     return (
-        <section className="mb-4 rounded-3xl border border-zinc-200 bg-white/95 p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/90">
-            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-950/40">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <section className="mb-4 rounded-3xl border border-zinc-200 bg-white/95 p-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/90">
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-2 dark:border-zinc-800 dark:bg-zinc-950/40">
+                <div className="flex flex-col gap-2 xl:flex-row xl:items-start xl:justify-between">
                     <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <h3 className="text-base font-black tracking-tight text-zinc-900 dark:text-zinc-50">Task Activity Snapshot</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base font-black tracking-tight text-zinc-900 dark:text-zinc-50">{t('task_activity_snapshot')}</h3>
                         <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
                             {statusLabel}
                         </span>
-                        <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                            {previewActivityCount} recent signals
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                            {previewActivityCount} {t('recent_signals')}
                         </span>
                     </div>
-                    <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                    <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
                         {isExpanded
-                            ? 'Four-week activity grid with recent task markers kept close for quick jumps.'
-                            : `Latest activity: ${latestActiveDayLabel}. Expand for the full day grid and clickable task list.`}
+                            ? t('expand_snapshot')
+                            : `${t('latest_activity')}: ${latestActiveDayLabel}. ${t('expand_snapshot')}`}
                     </p>
                     </div>
 
-                    <div className="flex flex-col gap-3 xl:items-end">
+                    <div className="flex flex-col gap-2 xl:items-end">
                     <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-                        <span className="rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                        <span className="rounded-full border border-zinc-300 bg-white px-2 py-0.5 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
                             {totalsLabel}
                         </span>
                     </div>
@@ -304,15 +320,15 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
                         type="button"
                         onClick={() => setIsExpanded((currentValue) => !currentValue)}
                         aria-expanded={isExpanded}
-                        className="inline-flex items-center gap-2 self-start rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-bold text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-zinc-900 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-900/20 xl:self-auto"
+                        className="inline-flex items-center gap-2 self-start rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-sm font-bold text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-zinc-900 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-900/20 xl:self-auto"
                     >
-                        <span>{isExpanded ? 'Hide Snapshot' : 'Open Snapshot'}</span>
+                        <span>{isExpanded ? t('hide_snapshot') : t('open_snapshot')}</span>
                         <span className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>v</span>
                     </button>
                     </div>
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                     {previewDayKeys.map((dayKey) => {
                         const dayTasks = tasksByDay.get(dayKey) || [];
                         const labels = formatDayLabel(dayKey);
@@ -324,14 +340,14 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
                                     setSelectedDayKey(dayKey);
                                     setIsExpanded(true);
                                 }}
-                                className={`min-w-[76px] rounded-2xl border px-2.5 py-2 text-left transition-all ${selectedDayKey === dayKey && isExpanded
+                                className={`min-w-[68px] rounded-xl border px-2 py-1.5 text-left transition-all ${selectedDayKey === dayKey && isExpanded
                                     ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
                                     : 'border-zinc-200 bg-zinc-50 hover:border-indigo-300 dark:border-zinc-800 dark:bg-zinc-950/40 dark:hover:border-indigo-700'
                                     }`}
                             >
                                 <div className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">{labels.weekday}</div>
                                 <div className="mt-0.5 text-sm font-bold text-zinc-800 dark:text-zinc-100">{labels.shortDay}</div>
-                                <div className="mt-2 flex flex-wrap gap-1">
+                                <div className="mt-1.5 flex flex-wrap gap-1">
                                     {dayTasks.slice(0, 4).map((task) => (
                                         <span
                                             key={task.id}
@@ -339,7 +355,7 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
                                             style={getTaskToneStyle(task)}
                                         />
                                     ))}
-                                    {dayTasks.length === 0 && <span className="text-[10px] text-zinc-400 dark:text-zinc-500">No activity</span>}
+                                    {dayTasks.length === 0 && <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{t('no_activity')}</span>}
                                 </div>
                             </button>
                         );
@@ -350,11 +366,11 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
             {isExpanded && (
                 <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="flex flex-wrap gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">Green = newly created</span>
-                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">Yellow = in progress</span>
-                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">Red = urgent</span>
-                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">White = completed</span>
-                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">Multi-color tiles combine signals</span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">{t('green_new')}</span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">{t('yellow_progress')}</span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">{t('red_urgent')}</span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">{t('white_done')}</span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-1 dark:bg-zinc-800">{t('multi_color')}</span>
                     </div>
 
                     <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -363,12 +379,12 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
                             onChange={(e) => setSelectedDepartment(e.target.value)}
                             className="rounded-full border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 focus:outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                         >
-                            <option value="all">All Departments</option>
+                            <option value="all">{t('all_departments')}</option>
                             {departmentOptions.map((departmentName) => (
                                 <option key={departmentName} value={departmentName}>{departmentName}</option>
                             ))}
                         </select>
-                        {loading && <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Refreshing snapshot...</span>}
+                        {loading && <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">{t('refreshing')}</span>}
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -421,7 +437,7 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
                                                     </span>
                                                 )}
                                                 {!loading && dayTasks.length === 0 && (
-                                                    <span className="text-[11px] text-zinc-400 dark:text-zinc-500">No activity</span>
+                                                    <span className="text-[11px] text-zinc-400 dark:text-zinc-500">{t('no_activity')}</span>
                                                 )}
                                             </div>
                                         </div>
@@ -434,12 +450,12 @@ export function TaskActivitySnapshot({ orgId, refreshKey, onSelectTask }: TaskAc
                         <div className="rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                             <div className="flex items-center justify-between gap-3">
                                 <div>
-                                    <h4 className="text-sm font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Day Focus</h4>
+                                    <h4 className="text-sm font-black uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">{t('day_focus')}</h4>
                                     <p className="text-base font-bold text-zinc-900 dark:text-zinc-50">
-                                        {selectedDayKey ? formatDayLabel(selectedDayKey).shortDay : 'No day selected'}
+                                        {selectedDayKey ? formatDayLabel(selectedDayKey).shortDay : t('no_day_selected')}
                                     </p>
                                 </div>
-                                {loading && <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">Refreshing...</span>}
+                                {loading && <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">{t('refreshing')}</span>}
                             </div>
 
                             <div className="mt-4 space-y-2">

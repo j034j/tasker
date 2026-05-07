@@ -90,11 +90,24 @@ export function AuthScreen() {
     const [joinedBoardIds, setJoinedBoardIds] = useState<string[]>([]);
     const [orgSearchLoading, setOrgSearchLoading] = useState(false);
     const [activeOrgIndex, setActiveOrgIndex] = useState(0);
+    const [orgDepartments, setOrgDepartments] = useState<{ id: string; name: string; admin_user_id?: string | null }[]>([]);
+    const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
+    const [newDeptName, setNewDeptName] = useState('');
+    const [isHeadRole, setIsHeadRole] = useState(false);
 
     type OrgSearchResult = { id: string; name: string; boards?: { id: string; name: string }[] };
+    const isHeadOfDept = (deptId: string) => orgDepartments.find(d => d.id === deptId)?.admin_user_id;
     const handleSelectOrg = (org: OrgSearchResult) => {
         setSelectedOrg(org);
         setOrgName(org.name);
+        setOrgDepartments([]);
+        setSelectedDepartment(null);
+        setNewDeptName('');
+        setIsHeadRole(false);
+        // Load departments for this org
+        api.get(`/orgs/${org.id}/departments`).then(({ data }) => {
+            setOrgDepartments(Array.isArray(data?.departments) ? data.departments : []);
+        }).catch(() => setOrgDepartments([]));
     };
 
     const handleOrgSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -302,6 +315,20 @@ export function AuthScreen() {
                 if (!SKIP_EMAIL_VERIFICATION_FRONTEND && verificationToken) {
                     payload.verificationToken = verificationToken;
                 }
+                // Handle department: create new one if typing new name, otherwise use selected
+                if (newDeptName.trim()) {
+                    const existingDept = orgDepartments.find(d => d.name.toLowerCase() === newDeptName.trim().toLowerCase());
+                    if (existingDept) {
+                        payload.departmentId = existingDept.id;
+                        payload.makeDeptAdmin = isHeadRole && !existingDept.admin_user_id;
+                    } else {
+                        payload.departmentName = newDeptName.trim();
+                        payload.makeDeptAdmin = isHeadRole;
+                    }
+                } else if (selectedDepartment) {
+                    payload.departmentId = selectedDepartment;
+                    payload.makeDeptAdmin = isHeadRole && !isHeadOfDept(selectedDepartment);
+                }
                 const { data } = await api.post('/auth/register', payload);
                 login(data.token, data.user, data.orgName, data.orgId);
                 navigate('/', { replace: true });
@@ -330,15 +357,8 @@ export function AuthScreen() {
 
     return (
         <>
-            {/* Test Mode Banner */}
-            {SKIP_EMAIL_VERIFICATION_FRONTEND && (
-                <div className="fixed top-0 left-0 right-0 z-[200] bg-amber-100 border-b border-amber-300 px-4 py-2 text-center">
-                    <span className="text-amber-800 text-sm font-bold">TEST MODE: Email verification is disabled</span>
-                </div>
-            )}
-            
             {/* Language Toggle (Fixed Top Right) */}
-            <div className={`fixed top-4 right-4 z-[100] flex gap-2 ${SKIP_EMAIL_VERIFICATION_FRONTEND ? 'top-16' : ''}`}>
+            <div className="fixed top-4 right-4 z-[100] flex gap-2">
                 <button
                     onClick={() => setLanguage('en')}
                     className={`p-2 rounded-lg transition-all border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700 hover:bg-white/80 dark:hover:bg-zinc-800/80 backdrop-blur-sm ${language === 'en' ? 'opacity-100 bg-white/50 dark:bg-zinc-800/50 shadow-sm' : 'opacity-50 hover:opacity-100'}`}
@@ -371,6 +391,13 @@ export function AuthScreen() {
                 <div className="absolute -top-40 -right-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
 
                 <div className="max-w-sm w-full bg-white dark:bg-zinc-900 shadow-2xl shadow-indigo-500/10 rounded-3xl p-8 relative z-10 border border-zinc-100 dark:border-zinc-800 flex flex-col items-center">
+                    {/* Test Mode Banner */}
+                    {SKIP_EMAIL_VERIFICATION_FRONTEND && (
+                        <div className="w-full -mt-2 mb-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-2 text-center">
+                            <span className="text-amber-700 dark:text-amber-400 text-xs font-bold">TEST MODE: Email verification disabled</span>
+                        </div>
+                    )}
+
                     <div className="text-center mb-6">
                         <h1 className="text-3xl font-black mb-2 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">{t('app_title')}</h1>
                         <p className="text-muted-foreground font-medium text-sm">{t('welcome_subtitle')}</p>
@@ -498,6 +525,85 @@ export function AuthScreen() {
                                                 ))}
                                                 {(selectedOrg.boards ?? []).length === 0 && <p className="text-xs text-muted-foreground italic">{t('auth_no_boards')}</p>}
                                             </div>
+                                        </div>
+
+                                        {/* Department Selection */}
+                                        <div className="border-t border-zinc-200 dark:border-zinc-700 pt-3 mt-3 space-y-3">
+                                            <div>
+                                                <label className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider mb-1 block">Department (Optional)</label>
+                                                <p className="text-[10px] text-zinc-500 mb-2">Join a department, or skip this step. Select "Head" to manage boards and members.</p>
+                                            </div>
+
+                                            <div className="flex gap-2">
+                                                <input
+                                                    list="join-dept-list"
+                                                    value={newDeptName}
+                                                    onChange={(e) => {
+                                                        setNewDeptName(e.target.value);
+                                                        const match = orgDepartments.find(d => d.name.toLowerCase() === e.target.value.toLowerCase());
+                                                        if (match) {
+                                                            setSelectedDepartment(match.id);
+                                                        } else {
+                                                            setSelectedDepartment(null);
+                                                        }
+                                                    }}
+                                                    className="flex-1 px-4 py-2 rounded-xl border border-zinc-200/80 dark:border-zinc-700/80 bg-zinc-50/50 dark:bg-zinc-900/50 text-sm"
+                                                    placeholder="Type or select department..."
+                                                />
+                                                <datalist id="join-dept-list">
+                                                    {orgDepartments.map(d => <option key={d.id} value={d.name} />)}
+                                                </datalist>
+                                                {selectedDepartment && (
+                                                    <span className="px-2 py-2 text-xs font-bold text-green-600 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">✓ Selected</span>
+                                                )}
+                                            </div>
+                                            {newDeptName.trim() && !orgDepartments.some(d => d.name.toLowerCase() === newDeptName.trim().toLowerCase()) && (
+                                                <p className="text-[10px] text-indigo-600 dark:text-indigo-400">↳ Will create new department "{newDeptName.trim()}"</p>
+                                            )}
+
+                                            {/* Role Toggle: Skip / Member / Head */}
+                                            <div className="flex items-center gap-4 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="deptRole"
+                                                        value="skip"
+                                                        checked={!selectedDepartment && !newDeptName.trim()}
+                                                        onChange={() => { setSelectedDepartment(null); setNewDeptName(''); }}
+                                                        className="w-4 h-4 text-indigo-600"
+                                                    />
+                                                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Skip</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="deptRole"
+                                                        value="member"
+                                                        checked={Boolean((selectedDepartment || newDeptName.trim()) && !(selectedDepartment && isHeadOfDept(selectedDepartment)))}
+                                                        onChange={() => {}}
+                                                        className="w-4 h-4 text-indigo-600"
+                                                        disabled={!selectedDepartment && !newDeptName.trim()}
+                                                    />
+                                                    <span className={`text-xs font-medium ${selectedDepartment || newDeptName.trim() ? 'text-zinc-700 dark:text-zinc-300' : 'text-zinc-400 dark:text-zinc-600'}`}>Member</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="deptRole"
+                                                        value="head"
+                                                        checked={Boolean(isHeadRole)}
+                                                        onChange={() => setIsHeadRole(true)}
+                                                        disabled={!selectedDepartment && !newDeptName.trim()}
+                                                        className="w-4 h-4 text-indigo-600"
+                                                    />
+                                                    <span className={`text-xs font-bold ${selectedDepartment || newDeptName.trim() ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-400 dark:text-zinc-600'}`}>Head ⭐</span>
+                                                </label>
+                                            </div>
+                                            {isHeadRole && (selectedDepartment || newDeptName.trim()) && (
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-400 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                                                    ⭐ You'll be the admin of this department with full CRUD access to its boards and members.
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 )}

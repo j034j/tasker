@@ -3,6 +3,7 @@ import { useStore } from '@/lib/store';
 import { Button } from './ui/Button';
 import { DraggableModalWrapper } from './ui/DraggableModalWrapper';
 import { X, Trash2, Edit2, Key } from 'lucide-react';
+import { api } from '@/lib/axios';
 
 interface OrgShape {
     id: string;
@@ -44,7 +45,7 @@ export function ManageOrgModal({ org, onClose }: ManageOrgModalProps) {
         if (activeTab === 'departments') {
             (async () => {
                 try {
-                    const { data } = await (await import('@/lib/axios')).api.get(`/orgs/${org.id}/departments`);
+                    const { data } = await api.get(`/orgs/${org.id}/departments`);
                     setDepartments(Array.isArray(data?.departments) ? data.departments : []);
                 } catch (err) {
                     console.error('Failed to load departments', err);
@@ -183,7 +184,7 @@ export function ManageOrgModal({ org, onClose }: ManageOrgModalProps) {
                                 <Button onClick={async () => {
                                     if (!newDeptName.trim()) return alert('Enter a department name');
                                     try {
-                                        const res = await (await import('@/lib/axios')).api.post(`/orgs/${org.id}/departments`, { name: newDeptName.trim(), adminUserId: newDeptAdmin });
+                                        const res = await api.post(`/orgs/${org.id}/departments`, { name: newDeptName.trim(), adminUserId: newDeptAdmin });
                                         setDepartments(prev => [{ ...res.data, admin_user_id: res.data?.admin_user_id || res.data?.adminUserId || null }, ...prev]);
                                         setNewDeptName(''); setNewDeptAdmin(null);
                                     } catch (err) {
@@ -207,14 +208,14 @@ export function ManageOrgModal({ org, onClose }: ManageOrgModalProps) {
                                                 const newName = prompt('Update department name', d.name);
                                                 if (!newName) return;
                                                 try {
-                                                    await (await import('@/lib/axios')).api.put(`/departments/${d.id}`, { name: newName });
+                                                    await api.put(`/departments/${d.id}`, { name: newName });
                                                     setDepartments(prev => prev.map(x => x.id === d.id ? { ...x, name: newName } : x));
                                                 } catch (err) { console.error(err); alert('Failed to update'); }
                                             }}>Edit</button>
                                             <button className="text-red-500 hover:text-red-700" onClick={async () => {
                                                 if (!confirm(`Delete department ${d.name}?`)) return;
                                                 try {
-                                                    await (await import('@/lib/axios')).api.delete(`/departments/${d.id}`);
+                                                    await api.delete(`/departments/${d.id}`);
                                                     setDepartments(prev => prev.filter(x => x.id !== d.id));
                                                 } catch (err) { console.error(err); alert('Failed to delete'); }
                                             }}>Delete</button>

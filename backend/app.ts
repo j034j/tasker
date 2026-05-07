@@ -40,10 +40,15 @@ const requestRateLimiter = (req: Request, res: Response, next: NextFunction) => 
         return next();
     }
     if (current.count >= rateLimitMax) {
+        console.log(`[RateLimit] BLOCKED - path: ${req.path}, ip: ${key}, count: ${current.count}/${rateLimitMax}`);
         return res.status(429).json({ error: 'Too many requests. Please retry later.' });
     }
     current.count += 1;
     rateBucket.set(key, current);
+    // Log PUT/translate requests for debugging
+    if (req.method === 'PUT' || req.path.includes('translate')) {
+        console.log(`[Request] ${req.method} ${req.path}, count: ${current.count}`);
+    }
     return next();
 };
 

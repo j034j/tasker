@@ -8,9 +8,10 @@ interface DraggableModalWrapperProps {
     onClose: () => void;
     children: React.ReactNode;
     className?: string;
+    hasUnsavedChanges?: boolean;
 }
 
-export function DraggableModalWrapper({ isOpen, onClose, children, className = '' }: DraggableModalWrapperProps) {
+export function DraggableModalWrapper({ isOpen, onClose, children, className = '', hasUnsavedChanges = false }: DraggableModalWrapperProps) {
     const nodeRef = useRef(null);
     const portalTarget = useMemo(() => {
         if (typeof document === 'undefined') return null;
@@ -18,6 +19,17 @@ export function DraggableModalWrapper({ isOpen, onClose, children, className = '
     }, []);
 
     if (!isOpen || !portalTarget) return null;
+
+    const handleBackdropClick = (e: React.MouseEvent) => {
+        if (e.target === e.currentTarget) {
+            if (hasUnsavedChanges) {
+                const confirmClose = window.confirm('You have unsaved changes. Are you sure you want to close? Your data will be lost.');
+                if (!confirmClose) return;
+            }
+            console.log('[TaskModal][BackdropClose] backdrop clicked, closing modal');
+            onClose();
+        }
+    };
 
     return createPortal(
         <div
@@ -36,12 +48,7 @@ export function DraggableModalWrapper({ isOpen, onClose, children, className = '
                 placeItems: 'center',
                 zIndex: 9999,
             }}
-            onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                    console.log('[TaskModal][BackdropClose] backdrop clicked, closing modal');
-                    onClose();
-                }
-            }}
+            onClick={handleBackdropClick}
         >
             <Draggable
                 nodeRef={nodeRef}

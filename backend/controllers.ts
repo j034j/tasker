@@ -91,12 +91,14 @@ type RecurringDutyRow = {
 type ReportingBoardRow = {
     id: string;
     name: string;
-    created_at: string;
+    created_at?: string | null;
     created_by?: string | null;
     followers?: string | null;
     is_public: number | boolean;
     archived: number | boolean;
     creator_name?: string | null;
+    department_id?: string | null;
+    department_name?: string | null;
 };
 
 type ReportingTaskRow = {
@@ -316,13 +318,13 @@ const getMonthWeekLabel = (date: Date): string => {
     const monthName = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
     return `${monthName} Week ${getWeekOfMonth(date)}`;
 };
-const isPrivileged = (role?: string) => role === 'admin' || role === 'org_super_admin' || role === 'super_admin';
+const isPrivileged = (role?: string) => role === 'admin' || role === 'org_super_admin' || role === 'super_admin' || role === 'dept_admin';
 const canUseAdminOverride = (role?: string) => role === 'org_super_admin' || role === 'super_admin';
 const canAccessOrg = (user: AuthenticatedRequest['user'], orgId: string) =>
-    Boolean(user && (user.role === 'super_admin' || user.orgId === orgId));
+    Boolean(user && (isPrivileged(user.role) || user.orgId === orgId));
 
-const getBoardForAccess = async (boardId: string) => first(asRows<BoardAccessRow>((await db.query(
-    'SELECT id, org_id, created_by FROM boards WHERE id = ?',
+const getBoardForAccess = async (boardId: string) => first(asRows<BoardAccessRow & { department_id?: string | null }>((await db.query(
+    'SELECT id, org_id, created_by, department_id FROM boards WHERE id = ?',
     [boardId]
 )).rows));
 
@@ -490,7 +492,7 @@ export const registerOrg = async (req: Request, res: Response) => {
     const normalizedUsername = username.trim().toLowerCase();
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (!SKIP_EMAIL_VERIFICATION && !validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
+    if (!SKIP_EMAIL_VERIFICATION && verificationToken && !validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
         console.warn('Registration failed verification token check for email:', normalizedEmail);
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
     }
@@ -784,7 +786,7 @@ export const findOrg = async (req: Request, res: Response) => {
 };
 
 export const registerUser = async (req: Request, res: Response) => {
-    const { email, password, userName, username, orgId, joinedBoardIds, phoneNumber, skills, location, verificationToken } = req.body;
+    const { email, password, userName, username, orgId, joinedBoardIds, phoneNumber, skills, location, verificationToken, departmentId, departmentName, makeDeptAdmin } = req.body;
     const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
@@ -795,11 +797,14 @@ export const registerUser = async (req: Request, res: Response) => {
     }
 
     // Basic Validation
-    if (!normalizedEmail || !normalizedUsername || !password || !userName || !orgId || !verificationToken) {
+    if (!normalizedEmail || !normalizedUsername || !password || !userName || !orgId) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
-    if (!validateRegistrationVerificationToken(String(verificationToken), normalizedEmail)) {
+    if (!SKIP_EMAIL_VERIFICATION && !validateRegistrationVerificationToken(String(verificationToken || ''), normalizedEmail)) {
         return res.status(400).json({ error: 'Email not verified. Please verify email before registration.' });
+    }
+    if (SKIP_EMAIL_VERIFICATION) {
+        console.warn('SKIP_EMAIL_VERIFICATION is enabled — bypassing email verification for', normalizedEmail);
     }
 
     try {
@@ -812,11 +817,45 @@ export const registerUser = async (req: Request, res: Response) => {
         const hashedPassword = bcrypt.hashSync(password, 10);
         const userId = uuidv4();
 
-        // 1. Create User
+        // Determine department info first (without creating)
+        let finalDeptId = departmentId || null;
+        let willBeDeptAdmin = false;
+        let newDeptName = null;
+
+        if (departmentName && typeof departmentName === 'string' && departmentName.trim()) {
+            newDeptName = departmentName.trim();
+            const existingDept = first(asRows<{ id: string; admin_user_id?: string | null }>((await db.query('SELECT id, admin_user_id FROM departments WHERE org_id = ? AND LOWER(name) = ?', [orgId, newDeptName.toLowerCase()])).rows));
+            if (existingDept) {
+                finalDeptId = existingDept.id;
+                willBeDeptAdmin = makeDeptAdmin && !existingDept.admin_user_id;
+            } else {
+                // Will create new department
+                finalDeptId = uuidv4();
+                willBeDeptAdmin = makeDeptAdmin === true;
+            }
+        } else if (departmentId) {
+            const dept = first(asRows<{ id: string; admin_user_id?: string | null }>((await db.query('SELECT id, admin_user_id FROM departments WHERE id = ? AND org_id = ?', [departmentId, orgId])).rows));
+            if (dept) {
+                finalDeptId = dept.id;
+                willBeDeptAdmin = makeDeptAdmin && !dept.admin_user_id;
+            }
+        }
+
+        const userRole = willBeDeptAdmin ? 'dept_admin' : 'member';
+
+        // 1. Create User FIRST
         await db.execute(
-            'INSERT INTO users (id, name, username, email, password_hash, org_id, role, phone_number, skills, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [userId, userName, normalizedUsername, normalizedEmail, hashedPassword, orgId, 'member', phoneNumber || null, skills || null, location || null]
+            'INSERT INTO users (id, name, username, email, password_hash, org_id, role, phone_number, skills, location, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [userId, userName, normalizedUsername, normalizedEmail, hashedPassword, orgId, userRole, phoneNumber || null, skills || null, location || null, finalDeptId]
         );
+
+        // 2. Create department if needed (user now exists so we can set admin_user_id)
+        if (newDeptName) {
+            await db.execute('INSERT INTO departments (id, org_id, name, admin_user_id) VALUES (?, ?, ?, ?)', [finalDeptId, orgId, newDeptName, willBeDeptAdmin ? userId : null]);
+        } else if (finalDeptId && willBeDeptAdmin) {
+            // Update existing department's admin
+            await db.execute('UPDATE departments SET admin_user_id = ? WHERE id = ?', [userId, finalDeptId]);
+        }
 
         // 2. Join selected boards (add to followers) & Notify Owners
         if (Array.isArray(joinedBoardIds) && joinedBoardIds.length > 0) {
@@ -841,7 +880,7 @@ export const registerUser = async (req: Request, res: Response) => {
             }
         }
 
-        const token = jwt.sign({ userId, orgId, role: 'member' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
+        const token = jwt.sign({ userId, orgId, role: userRole }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN_SECONDS });
         const orgRow = first((await db.query('SELECT name FROM organizations WHERE id = ?', [orgId])).rows);
 
         res.json({
@@ -850,7 +889,7 @@ export const registerUser = async (req: Request, res: Response) => {
             userId,
             token,
             orgName: orgRow ? orgRow.name : 'Unknown Org',
-            user: { id: userId, name: userName, username: normalizedUsername, email: normalizedEmail, role: 'member', skills: skills || null, location: location || null }
+            user: { id: userId, name: userName, username: normalizedUsername, email: normalizedEmail, role: userRole, skills: skills || null, location: location || null }
         });
 
     } catch (err: unknown) {
@@ -1083,10 +1122,14 @@ export const getBoard = async (req: AuthenticatedRequest, res: Response) => {
 export const moveTask = async (req: AuthenticatedRequest, res: Response) => {
     const { taskId, targetColumnId } = req.body;
     try {
+        console.log(`[moveTask] Request received - task: ${taskId}, target: ${targetColumnId}, user: ${req.user?.userId}, role: ${req.user?.role}`);
         if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
         const taskScope = await getTaskScope(taskId);
+        console.log(`[moveTask] Task scope: board=${taskScope?.board_id}, org=${taskScope?.org_id}`);
         if (!taskScope) return res.status(404).json({ error: 'Task not found' });
-        if (!canAccessOrg(req.user, taskScope.org_id)) {
+        const canAccess = canAccessOrg(req.user, taskScope.org_id);
+        console.log(`[moveTask] canAccessOrg: ${canAccess}, user.orgId=${req.user.orgId}, taskScope.org_id=${taskScope.org_id}`);
+        if (!canAccess) {
             return res.status(403).json({ error: 'Forbidden' });
         }
         const taskMeta = first(asRows<{ interested_users?: string | null }>((await db.query(`
@@ -1119,6 +1162,7 @@ export const moveTask = async (req: AuthenticatedRequest, res: Response) => {
         await db.execute('UPDATE tasks SET column_id = ?, completed_at = ? WHERE id = ?', [targetColumnId, completedAt, taskId]);
         res.json({ success: true, taskId, targetColumnId });
     } catch (err: unknown) {
+        console.error(`[moveTask] Error:`, err);
         const message = err instanceof Error ? err.message : 'Unknown error';
         res.status(500).json({ error: message });
     }
@@ -1131,14 +1175,35 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response) => {
         weatherSensitive, fundingNeeded, peopleRequired, skills,
         weather_index, funding_factor, skill_availability,
         archived, projectDuration, projectLocation, weatherCode,
-        interested_users, assignedTo, adminOverrideUrgency, adminOverridePriority
+        interested_users, assignedTo, adminOverrideUrgency, adminOverridePriority,
+        review
     } = req.body;
 
+    console.log(`[updateTask] ========== START ==========`);
+    console.log(`[updateTask] Task ID: ${id}`);
+    console.log(`[updateTask] Authenticated user:`, req.user);
+    console.log(`[updateTask] isPrivileged result: ${isPrivileged(req.user?.role)}`);
+    
     try {
-        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+        if (!req.user) {
+            console.log(`[updateTask] Step 1 FAILED - no user`);
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        console.log(`[updateTask] Step 2 - Calling getTaskScope...`);
         const taskScope = await getTaskScope(id);
-        if (!taskScope) return res.status(404).json({ error: 'Task not found' });
-        if (!canAccessOrg(req.user, taskScope.org_id)) {
+        console.log(`[updateTask] Step 3 - Got taskScope:`, taskScope);
+        
+        if (!taskScope) {
+            console.log(`[updateTask] Step 3 FAILED - taskScope is null`);
+            return res.status(404).json({ error: 'Task not found' });
+        }
+        
+        console.log(`[updateTask] Step 4 - Calling canAccessOrg(${req.user.orgId}, ${taskScope.org_id})`);
+        const canAccess = canAccessOrg(req.user, taskScope.org_id);
+        console.log(`[updateTask] Step 5 - canAccessOrg result: ${canAccess}`);
+        
+        if (!canAccess) {
+            console.log(`[updateTask] Step 5 FAILED - canAccessOrg returned false`);
             return res.status(403).json({ error: 'Forbidden' });
         }
         const taskAccessRow = first(asRows<{
@@ -1150,15 +1215,26 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response) => {
             'SELECT assigned_to, interested_users, admin_override_urgency, admin_override_priority FROM tasks WHERE id = ?',
             [id]
         )).rows));
-        if (!taskAccessRow) return res.status(404).json({ error: 'Task not found' });
+        if (!taskAccessRow) {
+            console.log(`[updateTask] Step 6 FAILED - taskAccessRow is null`);
+            return res.status(404).json({ error: 'Task not found' });
+        }
         const interestedIds = parseCsvIds(taskAccessRow.interested_users);
+        
         const canMutateTask = isPrivileged(req.user.role)
             || taskScope.created_by === req.user.userId
             || taskAccessRow.assigned_to === req.user.userId
-            || interestedIds.includes(req.user.userId);
+            || interestedIds.includes(req.user.userId)
+            || req.user.role === 'dept_admin';
+            
+        console.log(`[updateTask] Step 7 - Permission check: privileged=${isPrivileged(req.user.role)}, creator=${taskScope.created_by === req.user.userId}, assigned=${taskAccessRow.assigned_to === req.user.userId}, interested=${interestedIds.includes(req.user.userId)}, dept_admin=${req.user.role === 'dept_admin'}`);
+        console.log(`[updateTask] Step 8 - canMutateTask = ${canMutateTask}`);
+        
         if (!canMutateTask) {
+            console.log(`[updateTask] Step 8 FAILED - canMutateTask is false`);
             return res.status(403).json({ error: 'Only task members or admins can update this task' });
         }
+        console.log(`[updateTask] Step 9 - All checks passed, processing updates...`);
 
         const updates: string[] = [];
         const params: (string | number | boolean | null)[] = [];
@@ -1261,6 +1337,10 @@ export const updateTask = async (req: AuthenticatedRequest, res: Response) => {
             updates.push('admin_override_priority = ?');
             params.push(normalizedOverridePriority);
         }
+        if (review !== undefined) {
+            updates.push('review = ?');
+            params.push(review || null);
+        }
 
         if (updates.length === 0) {
             return res.status(400).json({ error: 'No task fields provided for update' });
@@ -1322,8 +1402,8 @@ export const getTaskOverrideHistory = async (req: AuthenticatedRequest, res: Res
         if (!canAccessOrg(req.user, taskScope.org_id)) {
             return res.status(403).json({ error: 'Forbidden' });
         }
-        if (!canUseAdminOverride(req.user.role)) {
-            return res.status(403).json({ error: 'Only org super admins can view override history' });
+        if (!canUseAdminOverride(req.user.role) && !isPrivileged(req.user.role)) {
+            return res.status(403).json({ error: 'Insufficient permissions to view override history' });
         }
 
         const history = (await db.query(
@@ -1489,6 +1569,119 @@ export const getDepartmentBoards = async (req: AuthenticatedRequest, res: Respon
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         res.status(500).json({ error: message });
+    }
+};
+
+// Centralized org view that aggregates all departmental boards and their tasks
+export const getOrganizationCentralView = async (req: AuthenticatedRequest, res: Response) => {
+    try {
+        const orgId = String(req.params.orgId);
+        const departmentId = typeof req.query.departmentId === 'string' ? req.query.departmentId : undefined;
+        if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+        if (!canAccessOrg(req.user, orgId)) return res.status(403).json({ error: 'Forbidden' });
+
+        let boardQuery = `
+            SELECT b.id, b.name, b.created_at, b.created_by, b.followers, b.is_public, b.archived, b.department_id, d.name as department_name
+            FROM boards b
+            LEFT JOIN departments d ON d.id = b.department_id
+            WHERE b.org_id = ? AND b.archived = 0
+        `;
+        const params: string[] = [orgId];
+
+        if (departmentId && departmentId !== 'all') {
+            boardQuery += ' AND b.department_id = ?';
+            params.push(departmentId);
+        }
+
+        const boards = asRows<ReportingBoardRow>((await db.query(boardQuery, params)).rows);
+        console.log(`[CentralView] Found ${boards.length} boards for org ${orgId}, dept filter: ${departmentId || 'all'}`);
+
+        const result: any[] = [];
+        let totalTasks = 0;
+        for (const b of boards) {
+            console.log(`  Board: "${b.name}" (${b.id}) | public: ${b.is_public} | dept: ${b.department_name || 'none'}`);
+            const cols = asRows<{ id: string; title: string; order_index: number }>((await db.query('SELECT id, title, order_index FROM columns WHERE board_id = ? ORDER BY order_index ASC', [b.id])).rows);
+            console.log(`    Columns: ${cols.length}`);
+            const columnsWithTasks: any[] = [];
+            for (const col of cols) {
+                const tasks = asRows<ReportingTaskRow>((await db.query(`
+                    SELECT t.id, t.title, t.assigned_to, t.interested_users, t.due_date, t.completed_at, t.created_at, t.archived, t.project_location, t.priority_score, t.urgency, t.review, c.title as column_title
+                    FROM tasks t
+                    JOIN columns c ON c.id = t.column_id
+                    WHERE t.column_id = ? AND t.archived = 0
+                `, [col.id])).rows);
+                console.log(`    Column "${col.title}": ${tasks.length} tasks`);
+                totalTasks += tasks.length;
+                columnsWithTasks.push({ ...col, tasks });
+            }
+            console.log(`    Board total: ${cols.reduce((s, c) => s + columnsWithTasks.find(x => x.id === c.id)?.tasks.length || 0, 0)} tasks`);
+            result.push({ board: b, columns: columnsWithTasks });
+        }
+        console.log(`[CentralView] Total tasks across all boards: ${totalTasks}`);
+        res.json({ success: true, boards: result });
+    } catch (err: unknown) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    }
+};
+
+// Assign a user to a department (or remove by setting departmentId to null)
+export const assignUserToDepartment = async (req: AuthenticatedRequest, res: Response) => {
+    const { userId, departmentId, makeAdmin } = req.body;
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+    try {
+        // Verify target user belongs to same org
+        const targetUser = first(asRows<{ org_id: string }>((await db.query('SELECT org_id FROM users WHERE id = ?', [userId])).rows));
+        if (!targetUser) return res.status(404).json({ error: 'User not found' });
+        if (targetUser.org_id !== req.user.orgId && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: 'Cannot assign user from different organization' });
+        }
+
+        // If departmentId provided, verify it exists and belongs to same org
+        if (departmentId) {
+            const dept = first(asRows<{ org_id: string; admin_user_id?: string | null }>((await db.query('SELECT org_id, admin_user_id FROM departments WHERE id = ?', [departmentId])).rows));
+            if (!dept) return res.status(404).json({ error: 'Department not found' });
+            if (dept.org_id !== req.user.orgId) {
+                return res.status(403).json({ error: 'Department belongs to different organization' });
+            }
+            // Set admin_user_id if making admin
+            if (makeAdmin === true) {
+                await db.execute('UPDATE departments SET admin_user_id = ? WHERE id = ?', [userId, departmentId]);
+            }
+        }
+
+        // Update user's department_id and role
+        let newRole = 'member';
+        if (departmentId) {
+            const isDeptAdmin = first(asRows<{ admin_user_id: string }>((await db.query('SELECT admin_user_id FROM departments WHERE id = ? AND admin_user_id = ?', [departmentId, userId])).rows));
+            newRole = isDeptAdmin ? 'dept_admin' : 'member';
+        }
+        await db.execute('UPDATE users SET department_id = ?, role = ? WHERE id = ?', [departmentId || null, newRole, userId]);
+        res.json({ success: true, userId, departmentId: departmentId || null, role: newRole });
+    } catch (err: unknown) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    }
+};
+
+// Get all users in a department
+export const getDepartmentMembers = async (req: AuthenticatedRequest, res: Response) => {
+    const deptId = String(req.params.deptId);
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+        const dept = first(asRows<{ org_id: string }>((await db.query('SELECT org_id FROM departments WHERE id = ?', [deptId])).rows));
+        if (!dept) return res.status(404).json({ error: 'Department not found' });
+        if (dept.org_id !== req.user.orgId) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const members = asRows<{ id: string; name: string; email: string; role: string; username?: string | null }>(
+            (await db.query('SELECT id, name, email, role, username FROM users WHERE department_id = ?', [deptId])).rows
+        );
+        res.json({ members });
+    } catch (err: unknown) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
     }
 };
 
@@ -2317,7 +2510,7 @@ export const confirmOrgSuperAdminPromotion = async (req: AuthenticatedRequest, r
 
 export const updateBoard = async (req: AuthenticatedRequest, res: Response) => {
     const id = String(req.params.id);
-    const { name, archived, followers } = req.body;
+    const { name, archived, followers, departmentId } = req.body;
     const userId = req.user?.userId;
     const userRole = req.user?.role;
 
@@ -2329,7 +2522,7 @@ export const updateBoard = async (req: AuthenticatedRequest, res: Response) => {
             return res.status(404).json({ error: 'Board not found' });
         }
 
-        // 2. Permission Check: Admin OR Creator
+        // 2. Permission Check: Admin OR Creator OR Dept Admin
         const isCreator = board.created_by === userId;
         const isAdmin = isPrivileged(userRole);
         const inScope = canAccessOrg(req.user, board.org_id);
@@ -2349,6 +2542,9 @@ export const updateBoard = async (req: AuthenticatedRequest, res: Response) => {
         }
         if (req.body.isPublic !== undefined) {
             await db.execute('UPDATE boards SET is_public = ? WHERE id = ?', [req.body.isPublic ? 1 : 0, id]);
+        }
+        if (departmentId !== undefined) {
+            await db.execute('UPDATE boards SET department_id = ? WHERE id = ?', [departmentId || null, id]);
         }
         res.json({ success: true, id });
     } catch (err: unknown) {
@@ -2760,24 +2956,41 @@ export const translateText = async (req: Request, res: Response) => {
         }
 
         // Use MyMemory API
-        // Pair: sourceLang|targetLang
-        const pair = `${sourceLang}|${targetLang}`;
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${pair}`;
+        // Pair: sourceLang|targetLang (auto-detect if sourceLang not provided)
+        const langPair = sourceLang ? `${sourceLang}|${targetLang}` : `|${targetLang}`;
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
 
-        const response = await fetch(url);
-        const data = await response.json() as { responseStatus?: number; responseData?: { translatedText?: string }; responseDetails?: unknown };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-        if (data.responseStatus === 200) {
-            res.json({ translatedText: data.responseData?.translatedText });
-        } else {
-            // Fallback or error
-            console.error('Translation error:', data);
-            res.status(500).json({ error: 'Translation failed', details: data });
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeout);
+
+            if (!response.ok) {
+                console.error('MyMemory API HTTP error:', response.status);
+                return res.status(500).json({ error: 'Translation service unavailable' });
+            }
+            const data = await response.json() as { responseStatus?: number; responseData?: { translatedText?: string }; responseDetails?: unknown };
+
+            if (data.responseStatus === 200 && data.responseData?.translatedText) {
+                res.json({ translatedText: data.responseData.translatedText });
+            } else {
+                console.error('Translation API error:', data);
+                res.status(500).json({ error: 'Translation failed', details: data.responseDetails });
+            }
+        } catch (fetchError) {
+            clearTimeout(timeout);
+            if ((fetchError as Error).name === 'AbortError') {
+                console.error('Translation request timed out');
+                return res.status(504).json({ error: 'Translation request timed out' });
+            }
+            throw fetchError;
         }
 
     } catch (error) {
         console.error('Translation error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ error: 'Translation service error' });
     }
 };
 
@@ -2885,11 +3098,17 @@ export const getUserProfile = async (req: AuthenticatedRequest, res: Response) =
 
     try {
         // 1. Get User Details
-        const user = first((await db.query('SELECT id, name, username, email, role, phone_number, skills, location, org_id, last_board_id FROM users WHERE id = ?', [userId])).rows);
+        const user = first((await db.query('SELECT id, name, username, email, role, phone_number, skills, location, org_id, last_board_id, department_id FROM users WHERE id = ?', [userId])).rows);
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         // 2. Get Organization Details
         const org = first((await db.query('SELECT id, name FROM organizations WHERE id = ?', [user.org_id])).rows);
+
+        // 3. Get Department Details (if user has a department)
+        let department = null;
+        if (user.department_id) {
+            department = first((await db.query('SELECT id, name, admin_user_id FROM departments WHERE id = ?', [user.department_id])).rows);
+        }
 
         // 3. Get Interested Tasks
         // Conditions: 
@@ -2927,6 +3146,7 @@ export const getUserProfile = async (req: AuthenticatedRequest, res: Response) =
         res.json({
             user,
             organization: org,
+            department,
             interestedTasks,
             recurringDuties
         });

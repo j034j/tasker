@@ -9,8 +9,8 @@ import { DiscoveryModal } from './components/DiscoveryModal';
 import { CreateBoardModal } from './components/CreateBoardModal';
 import TaskActivitySnapshot from './components/TaskActivitySnapshot';
 import { ToastContainer } from './components/Toast';
-import CentralView from './components/CentralView';
-import { Plus, Trash2, LogOut, Archive, UserMinus, Search, User as UserIcon, ChartColumnIncreasing, CalendarDays, LayoutGrid, ShieldCheck, House } from 'lucide-react';
+import { CentralView } from './components/CentralView';
+import { LogOut, User as UserIcon, ChartColumnIncreasing, CalendarDays, LayoutGrid, ShieldCheck, House, Search, Plus, Archive, Trash2 } from 'lucide-react';
 import { NotificationPopover } from './components/NotificationPopover';
 import { SuperAdminRegister } from './components/SuperAdminRegister';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
@@ -78,7 +78,7 @@ const hasFollower = (followers: string | undefined, userId: string | undefined) 
   return followers.split(',').map((id) => id.trim()).filter(Boolean).includes(userId);
 };
 
-const canManageBoard = (role?: string) => role === 'admin' || role === 'org_super_admin' || role === 'super_admin';
+const canManageBoard = (role?: string) => role === 'admin' || role === 'org_super_admin' || role === 'super_admin' || role === 'dept_admin';
 
 function ShellFallback() {
   return (
@@ -89,13 +89,13 @@ function ShellFallback() {
 }
 
 function DashboardShell() {
-  const { board, boards, fetchBoard, fetchBoards, orgName, orgId, logout, deleteBoard, updateBoard, deleteOrganization, toggleBoardFollow, currentUser, fetchUserProfile, userProfile, fetchNotifications, fetchMyInvites } = useStore();
+  const { board, boards, fetchBoard, fetchBoards, orgName, orgId, logout, deleteBoard, updateBoard, toggleBoardFollow, currentUser, fetchUserProfile, userProfile, fetchNotifications, fetchMyInvites } = useStore();
   const { language, setLanguage, t } = useLanguage();
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
   const [isCreateBoardOpen, setIsCreateBoardOpen] = useState(false);
   const [isCentralOpen, setIsCentralOpen] = useState(false);
   const [discoveryTab, setDiscoveryTab] = useState<'boards' | 'orgs'>('boards');
-  const [view, setView] = useState<'board' | 'profile' | 'reporting' | 'weekly' | 'boards-overview' | 'org-admin-access'>('board');
+  const [view, setView] = useState<'board' | 'profile' | 'reporting' | 'weekly' | 'boards-overview' | 'org-admin-access' | 'central'>('board');
   const [sortByUrgency, setSortByUrgency] = useState(true);
   const [weekStart, setWeekStart] = useState(getCurrentWeekStart());
   const [selectedBoardWeekKey, setSelectedBoardWeekKey] = useState(getWeekKey(new Date()));
@@ -103,7 +103,7 @@ function DashboardShell() {
   const [showSnapshot, setShowSnapshot] = useState(true);
   // Guard ref: prevents the week-change board-swap effect from overriding snapshot-driven navigations
   const isNavigatingFromSnapshot = useRef(false);
-  const canAccessOrgAdminWorkflow = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin';
+  const canAccessOrgAdminWorkflow = currentUser?.role === 'admin' || currentUser?.role === 'org_super_admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'dept_admin';
   const recentWeekOptions = useMemo(() => getRecentWeekOptions(), []);
 
   // Filter boards for the dropdown (Joined/Followed only)
@@ -112,6 +112,13 @@ function DashboardShell() {
     () => boards.filter((entry) => hasFollower(entry.followers, currentUser?.id)),
     [boards, currentUser?.id]
   );
+
+  // All boards from all departments (for discovery)
+  const allOrgBoards = useMemo(
+    () => boards,
+    [boards]
+  );
+
   const selectableBoards = useMemo(() => {
     const weekScopedBoards = myBoards.filter((entry) => getWeekKey(parseBoardDate(entry.created_at)) === selectedBoardWeekKey);
     const baseBoards = weekScopedBoards.length > 0 ? weekScopedBoards : myBoards;
@@ -156,8 +163,14 @@ function DashboardShell() {
   useEffect(() => {
     let isRefreshing = false;
 
+    let rateLimitCount = 0;
+    
     const refreshRemoteState = async () => {
       if (document.visibilityState === 'hidden' || isRefreshing) return;
+      if (rateLimitCount >= 3) return;
+
+      const token = localStorage.getItem('tasker_token');
+      if (!token) return;
 
       isRefreshing = true;
       try {
@@ -177,28 +190,34 @@ function DashboardShell() {
         if (activeBoardId) {
           await fetchBoard(activeBoardId);
         }
-      } catch (error) {
-        console.error('Failed to refresh remote desktop state', error);
+        rateLimitCount = 0;
+      } catch (error: any) {
+        if (error?.response?.status === 429) {
+          rateLimitCount++;
+          console.log('[App] Rate limited, count:', rateLimitCount);
+        }
       } finally {
         isRefreshing = false;
       }
     };
 
     const handleFocus = () => {
-      refreshRemoteState().catch(console.error);
+      if (rateLimitCount < 3) {
+        refreshRemoteState().catch(console.error);
+      }
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && rateLimitCount < 3) {
         refreshRemoteState().catch(console.error);
       }
     };
 
     const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && rateLimitCount < 3) {
         refreshRemoteState().catch(console.error);
       }
-    }, 60000);
+    }, 120000);
 
     window.addEventListener('focus', handleFocus);
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -287,13 +306,6 @@ function DashboardShell() {
   };
 
   /* User & Logout */
-  const handleDeleteAccount = async () => {
-    if (confirm("WARNING: Are you sure you want to delete your account and organization? ALL BOARDS AND TASKS WILL BE PERMANENTLY DELETED. This cannot be undone.")) {
-      if (confirm("Please confirm again: DELETE EVERYTHING?")) {
-        await deleteOrganization();
-      }
-    }
-  };
 
   const snapshotRefreshKey = useMemo(() => {
     // Refresh when board changes, task count changes, or week changes
@@ -338,10 +350,6 @@ function DashboardShell() {
                 <path d="M0 12H24V18H0V12Z" fill="#FFCC00"/>
               </svg>
             </button>
-          </div>
-          {/* Central view button */}
-          <div className="hidden md:flex items-center ml-4">
-            <Button onClick={() => setIsCentralOpen(true)} size="sm" variant="outline" className="mr-2">Central View</Button>
           </div>
 
           {/* Org Badge */}
@@ -397,13 +405,32 @@ function DashboardShell() {
                 </div>
 
                 <select
-                  value={board?.id || ''}
-                  onChange={(e) => fetchBoard(e.target.value)}
-                  className="bg-transparent text-sm font-medium px-2 py-1 focus:outline-none min-w-[120px] max-w-[200px]"
+                  value={view === 'central' ? '__central__' : (board?.id || '')}
+                  onChange={(e) => {
+                    if (e.target.value === '__central__') {
+                      setView('central');
+                    } else {
+                      setView('board');
+                      fetchBoard(e.target.value);
+                    }
+                  }}
+                  className="bg-white dark:bg-zinc-800 text-sm font-medium px-2 py-1.5 focus:outline-none min-w-[180px] max-w-[280px] border border-zinc-200 dark:border-zinc-700 rounded-md"
                 >
-                  {selectableBoards.map((b) => (
-                    <option key={b.id} value={b.id}>{b.name?.trim() || getMonthWeekLabel(parseBoardDate(b.created_at))}</option>
-                  ))}
+                  <optgroup label="🎯 Combined Views">
+                    <option value="__central__">🏠 Combined Central View</option>
+                  </optgroup>
+                  <optgroup label="📋 My Boards (Following)">
+                    {selectableBoards.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name?.trim() || getMonthWeekLabel(parseBoardDate(b.created_at))}</option>
+                    ))}
+                  </optgroup>
+                  {allOrgBoards.length > selectableBoards.length && (
+                    <optgroup label="🌐 All Organization Boards">
+                      {allOrgBoards.filter(ab => !selectableBoards.some(sb => sb.id === ab.id)).map((b) => (
+                        <option key={b.id} value={b.id}>{b.name?.trim() || getMonthWeekLabel(parseBoardDate(b.created_at))}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
 
                 {canManageBoard(currentUser?.role) && (
@@ -501,9 +528,6 @@ function DashboardShell() {
             <button onClick={() => setView('profile')} className={`p-2 rounded-full transition-all ${view === 'profile' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200'}`} title="My Profile">
               <UserIcon className="w-5 h-5" />
             </button>
-            <button onClick={handleDeleteAccount} className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all" title="Delete Account">
-              <UserMinus className="w-5 h-5" />
-            </button>
             <button onClick={logout} className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-all" title="Logout">
               <LogOut className="w-5 h-5" />
             </button>
@@ -513,7 +537,11 @@ function DashboardShell() {
 
       <main className="flex min-w-0 flex-1 overflow-hidden">
         <Suspense fallback={<ShellFallback />}>
-          {view === 'profile' ? (
+          {view === 'central' && orgId ? (
+            <div className="flex-1 flex flex-col min-h-0 bg-zinc-50 dark:bg-zinc-950 overflow-hidden relative">
+              <CentralView orgId={orgId} onClose={() => setView('board')} isFullPage={true} />
+            </div>
+          ) : view === 'profile' ? (
             <ProfilePage onBack={() => setView('board')} />
           ) : view === 'reporting' ? (
             <ReportingSystemPage
