@@ -1064,6 +1064,9 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
         }
 console.log(`[createTask] canAccessOrg passed, executing INSERT...`);
         console.log(`[createTask] INSERT params: id=${id}, columnId=${columnId}, title=${title}, description=${description}, urgency=${urgency}`);
+        console.log(`[createTask] All params - id: "${id}" (${typeof id}), columnId: "${columnId}" (${typeof columnId}), title: "${title}" (${typeof title})`);
+        console.log(`[createTask] assignedTo: "${assignedTo}" (${typeof assignedTo}), dueDate: "${dueDate}" (${typeof dueDate})`);
+        console.log(`[createTask] weatherCode: ${weatherCode} (${typeof weatherCode}), weatherSensitive: ${weatherSensitive} (${typeof weatherSensitive})`);
 
         const normalizedOverrideUrgency = canUseAdminOverride(req.user.role) && adminOverrideUrgency !== undefined && adminOverrideUrgency !== null
             ? Math.max(0, Math.min(100, Number(adminOverrideUrgency)))
@@ -1071,6 +1074,31 @@ console.log(`[createTask] canAccessOrg passed, executing INSERT...`);
         const normalizedOverridePriority = canUseAdminOverride(req.user.role) && adminOverridePriority !== undefined && adminOverridePriority !== null
             ? Math.max(0, Math.min(100, Number(adminOverridePriority)))
             : 0;
+
+        console.log(`[createTask] Prepared values - normalizedOverrideUrgency: ${normalizedOverrideUrgency}, normalizedOverridePriority: ${normalizedOverridePriority}`);
+
+        const insertParams: (string | number | null)[] = [
+            String(id), String(columnId), String(title || ''), 
+            description ? String(description) : null,
+            assignedTo ? String(assignedTo) : null,
+            Number.isFinite(urgency) ? Number(urgency) : 50, 
+            dueDate ? String(dueDate) : null, 
+            weatherSensitive ? 1 : 0, 
+            Number.isFinite(fundingNeeded) ? Number(fundingNeeded) : 0,
+            Number.isFinite(peopleRequired) ? Number(peopleRequired) : 1, 
+            skills ? String(skills) : '',
+            Number.isFinite(weatherIndex) ? Number(weatherIndex) : 0, 
+            Number.isFinite(fundingFactor) ? Number(fundingFactor) : 0, 
+            Number.isFinite(skillAvailability) ? Number(skillAvailability) : 50,
+            normalizedOverrideUrgency, normalizedOverridePriority,
+            Number.isFinite(score) ? Number(score) : 0, 
+            projectDuration ? String(projectDuration) : '', 
+            projectLocation ? String(projectLocation) : '',
+            weatherCode !== undefined && weatherCode !== null && Number.isFinite(Number(weatherCode)) ? Number(weatherCode) : null,
+            '' // Init interested_users
+        ];
+        console.log(`[createTask] Final insert params:`, insertParams);
+        console.log(`[createTask] Param types:`, insertParams.map(p => `${p} (${typeof p})`));
 
         await db.execute(`
             INSERT INTO tasks (
@@ -1082,16 +1110,7 @@ console.log(`[createTask] canAccessOrg passed, executing INSERT...`);
                 priority_score, project_duration, project_location,
                 weather_code, interested_users
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-            id, columnId, title, description, assignedTo,
-            urgency, dueDate, weatherSensitive ? 1 : 0, fundingNeeded,
-            peopleRequired || 1, skills || '',
-            weatherIndex || 0, fundingFactor || 0, skillAvailability || 50,
-            normalizedOverrideUrgency, normalizedOverridePriority,
-            score, projectDuration || '', projectLocation || '',
-            weatherCode !== undefined ? weatherCode : null,
-            '' // Init interested_users
-        ]);
+        `, insertParams);
         console.log(`[createTask] INSERT completed successfully!`);
 
         res.json({ id, title, priority_score: score });
