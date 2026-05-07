@@ -367,7 +367,7 @@ interface AppState {
     toggleArchiveTask: (taskId: string, archived: boolean) => Promise<void>;
 
     deleteBoard: (boardId: string) => Promise<void>;
-    updateBoard: (boardId: string, updates: { name?: string, archived?: boolean, departmentId?: string | null }) => Promise<void>;
+    updateBoard: (boardId: string, updates: { name?: string, archived?: boolean, departmentId?: string | null, isPublic?: boolean }) => Promise<void>;
     deleteOrganization: () => Promise<void>;
 
     setRankingWeights: (weights: RankingWeights) => void;
