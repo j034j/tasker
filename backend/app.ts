@@ -5,7 +5,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { router } from './routes.js';
 
 const app = express();
-const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:5173')
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:5173,https://tasker-five-rose.vercel.app')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
@@ -23,7 +23,6 @@ setInterval(() => {
     }
 }, RATE_CLEANUP_INTERVAL_MS);
 const isProduction = process.env.NODE_ENV === 'production';
-const isLocalDevOrigin = (origin: string) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
 
 const requestRateLimiter = (req: Request, res: Response, next: NextFunction) => {
     if (!isProduction) {
@@ -32,7 +31,20 @@ const requestRateLimiter = (req: Request, res: Response, next: NextFunction) => 
             return next();
         }
     }
-    const key = req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown';
+    // On Vercel/serverless, use x-forwarded-for or x-real-ip, falling back to 'global' bucket
+    // This prevents all requests from sharing one bucket due to undefined req.ip
+    const forwardedFor = req.headers['x-forwarded-for'];
+    let key: string;
+    if (typeof forwardedFor === 'string' && forwardedFor) {
+        key = forwardedFor.split(',')[0].trim();
+    } else if (req.headers['x-real-ip']) {
+        key = req.headers['x-real-ip'].toString();
+    } else if (req.ip) {
+        key = req.ip;
+    } else {
+        key = `global-${req.path}`;
+    }
+    
     const now = Date.now();
     const current = rateBucket.get(key);
     if (!current || current.resetAt <= now) {
@@ -40,15 +52,11 @@ const requestRateLimiter = (req: Request, res: Response, next: NextFunction) => 
         return next();
     }
     if (current.count >= rateLimitMax) {
-        console.log(`[RateLimit] BLOCKED - path: ${req.path}, ip: ${key}, count: ${current.count}/${rateLimitMax}`);
+        console.log(`[RateLimit] BLOCKED - path: ${req.path}, key: ${key}, count: ${current.count}/${rateLimitMax}`);
         return res.status(429).json({ error: 'Too many requests. Please retry later.' });
     }
     current.count += 1;
     rateBucket.set(key, current);
-    // Log PUT/translate requests for debugging
-    if (req.method === 'PUT' || req.path.includes('translate')) {
-        console.log(`[Request] ${req.method} ${req.path}, count: ${current.count}`);
-    }
     return next();
 };
 
@@ -62,11 +70,12 @@ const securityHeaders = (_req: Request, res: Response, next: NextFunction) => {
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || (!isProduction && isLocalDevOrigin(origin))) {
+        if (!origin || allowedOrigins.includes(origin) || (!isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin))) {
             return callback(null, true);
         }
         return callback(new Error('CORS origin denied'));
-    }
+    },
+    credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
 app.use(securityHeaders);
