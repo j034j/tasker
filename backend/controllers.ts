@@ -1031,18 +1031,26 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
     const id = uuidv4();
     const score = 0;
 
+    console.log(`[createTask] Request received - columnId: ${columnId}, title: ${title}, user: ${req.user?.userId}`);
+    console.log(`[createTask] Authenticated user:`, req.user);
+    
     try {
         if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+        console.log(`[createTask] Looking up column: ${columnId}`);
         const columnScope = first(asRows<{ column_id: string; board_id: string; org_id: string }>((await db.query(`
             SELECT c.id as column_id, b.id as board_id, b.org_id as org_id
             FROM columns c
             JOIN boards b ON b.id = c.board_id
             WHERE c.id = ?
         `, [columnId])).rows));
+        console.log(`[createTask] Column scope result:`, columnScope);
         if (!columnScope) return res.status(404).json({ error: 'Column not found' });
+        console.log(`[createTask] Checking canAccessOrg: user.orgId=${req.user.orgId}, columnScope.org_id=${columnScope.org_id}`);
         if (!canAccessOrg(req.user, columnScope.org_id)) {
+            console.log(`[createTask] canAccessOrg FAILED`);
             return res.status(403).json({ error: 'Forbidden' });
         }
+        console.log(`[createTask] canAccessOrg passed, proceeding with insert...`);
         if (assignedTo) {
             const assignee = first((await db.query(
                 'SELECT id FROM users WHERE id = ? AND org_id = ?',
@@ -1083,6 +1091,7 @@ export const createTask = async (req: AuthenticatedRequest, res: Response) => {
 
         res.json({ id, title, priority_score: score });
     } catch (err: unknown) {
+        console.error(`[createTask] Error:`, err);
         const message = err instanceof Error ? err.message : 'Unknown error';
         res.status(500).json({ error: message });
     }
